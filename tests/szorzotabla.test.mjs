@@ -426,6 +426,31 @@ async function main() {
     return page;
   });
 
+  await test('Verziószám és a link megosztása', async (expect) => {
+    const page = await newPage();
+    const appUrl = 'https://vmynick.github.io/matek-gyakorlo/';
+    const ver = await text(page, 'app-version');
+    expect(/^Szorzótábla Mester v\d+\.\d+( \([0-9a-f]{7}\))?$/.test(ver), `verzió felirat: "${ver}"`);
+    if (remoteUrl) expect(/\([0-9a-f]{7}\)$/.test(ver), `élesben a közzétételi azonosító is kell: "${ver}"`);
+
+    // Megosztó menü nélkül (pl. gépen): a link a vágólapra kerül
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(base).origin });
+    await page.evaluate(() => Object.defineProperty(navigator, 'share', { value: undefined, configurable: true }));
+    await page.locator('.app-footer .link-btn').click();
+    await tick(page, 100);
+    const clip = await page.evaluate(() => navigator.clipboard.readText());
+    expect(clip === appUrl, `vágólap: ${clip}`);
+    expect((await text(page, 'toast')).includes('vágólapra'), `üzenet: ${await text(page, 'toast')}`);
+
+    // Telefonon / tableten: a rendszer megosztó menüje kapja a linket
+    await page.evaluate(() => Object.defineProperty(navigator, 'share', {
+      configurable: true, value: (data) => { window.megosztva = data; return Promise.resolve(); } }));
+    await page.locator('.app-footer .link-btn').click();
+    const shared = await page.evaluate(() => window.megosztva);
+    expect(shared?.url === appUrl && shared?.title === 'Szorzótábla Mester', `megosztott adat: ${JSON.stringify(shared)}`);
+    return page;
+  });
+
   await test('Sötét mód: a rendszert követi, a gomb vált és megjegyzi', async (expect) => {
     const page = await newPage({ colorScheme: 'dark', viewport: { width: 412, height: 915 } });
     const theme = () => page.evaluate(() => document.documentElement.dataset.theme);

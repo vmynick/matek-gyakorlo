@@ -881,6 +881,28 @@
             cursor: pointer;
         }
 
+        /* Verzió és link megosztása: halványan a beállítások alján, hogy ne vonja el a figyelmet */
+        .app-footer {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            gap: 4px 8px;
+            margin-top: 18px;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .link-btn {
+            background: none;
+            border: none;
+            padding: 4px;
+            font-size: inherit;
+            color: inherit;
+            text-decoration: underline;
+            cursor: pointer;
+        }
+
         /* Telefonon kisebb margók, hogy több hely jusson a tartalomnak */
         @media (max-width: 599px) {
             :root { --page-pad: 8px; }
@@ -992,6 +1014,12 @@
         </div>
 
         <button class="btn-start" onclick="startQuiz()">Kezdés! 🚀</button>
+
+        <div class="app-footer">
+            <span id="app-version"></span>
+            <span aria-hidden="true">·</span>
+            <button class="link-btn" onclick="shareApp()">🔗 Link megosztása</button>
+        </div>
     </div>
 
     <!-- 2. KIKÉRDEZŐ / TESZT KÉPERNYŐ -->
@@ -1268,6 +1296,7 @@
         updateSoundButton();
 
         applyTheme(document.documentElement.dataset.theme);
+        document.getElementById('app-version').innerText = `Szorzótábla Mester ${versionText()}`;
         renderTableSelector();
         restoreAfterUpdate();
         updateSetupInfo();
@@ -2042,14 +2071,46 @@
         const countIndex = [10, 20, 30, 'all'].indexOf(saved.count);
         if (countIndex >= 0) setCount(saved.count, document.querySelectorAll('.btn-count')[countIndex]);
         if (['practice', 'exam', 'weak'].includes(saved.mode)) setMode(saved.mode);
-        showToast('✅ Az app frissült az új verzióra!');
+        showToast(`✅ Az app frissült: ${versionText()}`);
     }
 
+    let toastTimer = null;
     function showToast(message) {
         const toast = document.getElementById('toast');
         toast.innerText = message;
         toast.hidden = false;
-        setTimeout(() => { toast.hidden = true; }, 3500);
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => { toast.hidden = true; }, 3500);
+    }
+
+    /* --- VERZIÓ ÉS MEGOSZTÁS --- */
+    const APP_VERSION = '1.1';
+    const APP_BUILD = 'dev'; // a közzététel (GitHub Actions) írja át a commit rövid azonosítójára
+    const APP_URL = 'https://vmynick.github.io/matek-gyakorlo/';
+
+    function versionText() {
+        return `v${APP_VERSION}` + (APP_BUILD !== 'dev' ? ` (${APP_BUILD})` : '');
+    }
+
+    // Telefonon / tableten a rendszer megosztó menüje, máshol a link a vágólapra kerül
+    async function shareApp() {
+        playSound('click');
+        if (navigator.share) {
+            try {
+                await navigator.share({
+                    title: 'Szorzótábla Mester',
+                    text: 'Szorzótábla- és bennfoglalás-gyakorló alsósoknak, ingyen, internet nélkül is:',
+                    url: APP_URL,
+                });
+            } catch (e) { /* bezárta a megosztó menüt */ }
+            return;
+        }
+        try {
+            await navigator.clipboard.writeText(APP_URL);
+            showToast('🔗 A link a vágólapra került');
+        } catch (e) {
+            showToast(APP_URL);
+        }
     }
 
     /* --- SÖTÉT MÓD --- */
