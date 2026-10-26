@@ -72,6 +72,8 @@ async function migrate(env) {
             { name, query: fs.readFileSync(path.join(dir, file), 'utf8') });
         count++;
     }
+    // Az adatbázis API (PostgREST) frissítse a sémáról tárolt adatait, különben az új függvényeket nem látja
+    if (count) await sql(env, "notify pgrst, 'reload schema';");
     console.log(count ? `${count} migráció lefutott (${env})` : `Nincs új migráció (${env})`);
 }
 
