@@ -4,3 +4,4 @@ node_modules/
 deploy/
 deploy.ps1
 szorzotabla_old.html
+scripts/secretstuff.txt

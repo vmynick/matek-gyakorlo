@@ -1,0 +1,157 @@
+/* Szorzótábla Mester – közös stílus: színek (világos / sötét mód) és a feladat-térkép.
+   A gyakorló app (szorzotabla.html) és a szülői / tanári felület (szulo.html) is ezt használja. */
+
+:root {
+    --primary: #4f46e5;
+    --primary-hover: #4338ca;
+    --secondary: #06b6d4;
+    --success: #10b981;
+    --danger: #ef4444;
+    --warning: #f59e0b;
+    --bg-grad-1: #e0e7ff;
+    --bg-grad-2: #c7d2fe;
+    --card-bg: #ffffff;
+    --text-dark: #1e293b;
+    --text-muted: #64748b;
+    --primary-text: #4f46e5; /* lila szöveg (sötét módban világosabb, hogy olvasható legyen) */
+    --surface: #f8fafc; /* kártyák a kártyán belül */
+    --surface-2: #f1f5f9; /* fülsáv, számbillentyűk */
+    --raised: #ffffff; /* kiemelt elemek: aktív fül, gombok, dobozok */
+    --input-bg: #ffffff; /* a válasz mezője */
+    --border: #e2e8f0;
+    --border-strong: #cbd5e1;
+    --selected-bg: #eef2ff;
+    --danger-bg: #fee2e2;
+    --danger-border: #fca5a5;
+    --warn-bg: #fffbeb;
+    --warn-text: #b45309;
+    --hm-none-bg: #e2e8f0;
+    --hm-none-text: #94a3b8;
+    --border-radius: 20px;
+}
+
+/* Sötét mód: a színek felülírása (a data-theme-et a fejlécben lévő szkript állítja) */
+:root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg-grad-1: #0b1120;
+    --bg-grad-2: #1e1b4b;
+    --card-bg: #111a2e;
+    --text-dark: #e2e8f0;
+    --text-muted: #94a3b8;
+    --primary-text: #a5b4fc;
+    --surface: #1a2438;
+    --surface-2: #243049;
+    --raised: #2b3954;
+    --input-bg: #0b1120;
+    --border: #2f3d57;
+    --border-strong: #46546f;
+    --selected-bg: #2a2a6a;
+    --danger-bg: #4c1d1d;
+    --danger-border: #7f2d2d;
+    --warn-bg: #3b2a0a;
+    --warn-text: #fbbf24;
+    --hm-none-bg: #2b3954;
+    --hm-none-text: #6b7a94;
+}
+
+/* ===== Feladat-térkép ===== */
+
+/* A rács akkora, amekkora hely jut neki (szélesség és magasság közül a kisebb) */
+.heatmap-wrap {
+    flex: 1;
+    min-height: 150px;
+    container-type: size;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+}
+
+.heatmap {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 2px;
+    width: min(100cqw, calc((100cqh - 4px) * 12 / var(--hm-rows, 12)), 560px);
+    container-type: inline-size;
+}
+
+.hm-cell {
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: clamp(0.5rem, 2.8cqw, 0.85rem);
+    font-weight: 700;
+    border: none;
+    border-radius: 4px;
+    padding: 0;
+    position: relative;
+    cursor: pointer;
+    color: #1e293b;
+}
+
+.hm-head {
+    background: transparent;
+    color: var(--primary-text);
+    font-size: clamp(0.6rem, 3.4cqw, 1rem);
+    font-weight: 800;
+    cursor: default;
+}
+
+.hm-none { background: var(--hm-none-bg); color: var(--hm-none-text); }
+.hm-l0 { background: #ef4444; color: #fff; }
+.hm-l1 { background: #fb923c; }
+.hm-l2 { background: #fcd34d; }
+.hm-l3 { background: #86efac; }
+.hm-l4 { background: #10b981; color: #fff; }
+
+/* Lassú válasz: kis pötty a mező sarkában */
+.hm-cell.slow::after, .hm-slow-dot::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #1e293b;
+}
+
+.hm-cell.selected {
+    outline: 3px solid var(--primary);
+    outline-offset: 1px;
+    z-index: 1;
+}
+
+.hm-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    justify-content: center;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+.hm-legend i {
+    display: inline-block;
+    width: 11px;
+    height: 11px;
+    border-radius: 3px;
+    vertical-align: -2px;
+    margin: 0 1px;
+    position: relative;
+}
+
+.hm-slow-dot { background: #fcd34d; } /* színes minta, hogy a sötét pötty mindkét módban látsszon */
+
+/* Fix magasság: koppintáskor ne ugráljon a rács mérete */
+.hm-detail {
+    flex: none;
+    background: var(--raised);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 6px 10px;
+    font-size: 0.78rem;
+    line-height: 1.5; /* az emojik miatt kell a nagyobb sormagasság */
+    height: calc(3 * 1.5em + 14px); /* 3 sor + padding + keret */
+    overflow: hidden;
+}

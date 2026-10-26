@@ -15,7 +15,7 @@ const remoteUrl = opt('--url');
 const root = path.resolve(args[0] || path.join(path.dirname(fileURLToPath(import.meta.url)), '..'));
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.json': 'application/json',
-  '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png' };
+  '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png', '.css': 'text/css' };
 
 let swVersion = null; // a frissítés teszthez: ha be van állítva, a sw.js ezzel a verzióval megy ki
 
@@ -436,7 +436,7 @@ async function main() {
     // Megosztó menü nélkül (pl. gépen): a link a vágólapra kerül
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(base).origin });
     await page.evaluate(() => Object.defineProperty(navigator, 'share', { value: undefined, configurable: true }));
-    await page.locator('.app-footer .link-btn').click();
+    await page.locator('.app-footer .link-btn', { hasText: 'Link megosztása' }).click();
     await tick(page, 100);
     const clip = await page.evaluate(() => navigator.clipboard.readText());
     expect(clip === appUrl, `vágólap: ${clip}`);
@@ -445,7 +445,7 @@ async function main() {
     // Telefonon / tableten: a rendszer megosztó menüje kapja a linket
     await page.evaluate(() => Object.defineProperty(navigator, 'share', {
       configurable: true, value: (data) => { window.megosztva = data; return Promise.resolve(); } }));
-    await page.locator('.app-footer .link-btn').click();
+    await page.locator('.app-footer .link-btn', { hasText: 'Link megosztása' }).click();
     const shared = await page.evaluate(() => window.megosztva);
     expect(shared?.url === appUrl && shared?.title === 'Szorzótábla Mester', `megosztott adat: ${JSON.stringify(shared)}`);
     return page;

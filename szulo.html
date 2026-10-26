@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Szülői felület – Szorzótábla Mester</title>
+    <meta name="theme-color" content="#4f46e5">
+    <link rel="icon" href="icon.svg" type="image/svg+xml">
+    <link rel="manifest" href="manifest.webmanifest">
+    <script>
+        // Ugyanaz a sötét / világos mód, mint a gyakorló appban
+        (function () {
+            let saved = null;
+            try { saved = localStorage.getItem('szorzo_theme'); } catch (e) { /* tároló nélkül is megy */ }
+            const dark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+            document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+        })();
+    </script>
+    <link rel="stylesheet" href="common.css">
+    <script src="vendor/chart.umd.min.js"></script>
+    <script src="stats.js"></script>
+    <script src="vendor/supabase.js"></script>
+    <script src="config.js"></script>
+    <script src="cloud.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background: linear-gradient(135deg, var(--bg-grad-1), var(--bg-grad-2));
+            min-height: 100vh;
+            color: var(--text-dark);
+            padding: 16px;
+        }
+
+        .console {
+            max-width: 860px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .console-head {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .console-head h1 {
+            font-size: 1.4rem;
+            color: var(--primary-text);
+        }
+
+        .who {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        a, .link {
+            color: var(--primary-text);
+            font-weight: 700;
+            text-decoration: none;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: inherit;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: var(--border-radius);
+            padding: 18px;
+            box-shadow: 0 10px 20px -8px rgba(0, 0, 0, 0.15);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .card h2 {
+            font-size: 1.15rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .muted {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        .msg {
+            font-size: 0.9rem;
+            font-weight: 600;
+            min-height: 1.2em;
+        }
+
+        .msg.error { color: var(--danger); }
+        .msg.ok { color: var(--success); }
+
+        form, .row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+
+        input, select {
+            flex: 1 1 180px;
+            padding: 10px 12px;
+            border: 1px solid var(--border-strong);
+            border-radius: 10px;
+            background: var(--input-bg);
+            color: var(--text-dark);
+            font-size: 1rem;
+        }
+
+        button.btn {
+            padding: 10px 14px;
+            border: none;
+            border-radius: 10px;
+            background: var(--primary);
+            color: white;
+            font-weight: 700;
+            font-size: 0.95rem;
+            cursor: pointer;
+        }
+
+        button.btn.secondary {
+            background: var(--surface-2);
+            color: var(--text-dark);
+            border: 1px solid var(--border);
+        }
+
+        button.btn.danger {
+            background: var(--danger-bg);
+            color: var(--danger);
+            border: 1px solid var(--danger-border);
+        }
+
+        button.btn:disabled {
+            opacity: 0.6;
+            cursor: default;
+        }
+
+        .chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .child-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 2px;
+            padding: 10px 14px;
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            background: var(--surface);
+            color: var(--text-dark);
+            cursor: pointer;
+            text-align: left;
+        }
+
+        .child-btn strong {
+            font-size: 1.05rem;
+        }
+
+        .child-btn span {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .members {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 0.9rem;
+        }
+
+        .members li {
+            list-style: none;
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .avatars {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+
+        .avatars button {
+            font-size: 1.4rem;
+            padding: 4px 6px;
+            border: 2px solid transparent;
+            border-radius: 10px;
+            background: var(--surface);
+            cursor: pointer;
+        }
+
+        .avatars button.selected {
+            border-color: var(--primary);
+        }
+
+        details summary {
+            cursor: pointer;
+            font-weight: 700;
+            color: var(--primary-text);
+            font-size: 0.9rem;
+        }
+
+        details[open] summary {
+            margin-bottom: 8px;
+        }
+
+        .child-head {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 1.6rem;
+            font-weight: 800;
+        }
+
+        .code-box {
+            text-align: center;
+            padding: 14px;
+            border: 2px dashed var(--primary);
+            border-radius: 14px;
+            background: var(--selected-bg);
+        }
+
+        .code-box .code {
+            font-size: 2.4rem;
+            font-weight: 900;
+            letter-spacing: 0.25em;
+            color: var(--primary-text);
+            user-select: all;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 12px;
+        }
+
+        .chart-box {
+            position: relative;
+            height: 200px;
+        }
+
+        .heatmap-card {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .heatmap-wrap {
+            height: min(420px, 80vw);
+        }
+
+        .op-toggle {
+            display: flex;
+            gap: 6px;
+        }
+
+        .op-toggle button {
+            flex: 1;
+            padding: 6px;
+            border: 1px solid var(--border-strong);
+            border-radius: 8px;
+            background: var(--raised);
+            color: var(--text-dark);
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .op-toggle button.selected {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: white;
+        }
+
+        .toast {
+            position: fixed;
+            left: 50%;
+            bottom: 16px;
+            transform: translateX(-50%);
+            max-width: calc(100% - 32px);
+            background: var(--text-dark);
+            color: var(--card-bg);
+            padding: 10px 14px;
+            border-radius: 14px;
+            font-weight: 600;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+            z-index: 900;
+        }
+
+        [hidden] {
+            display: none !important;
+        }
+
+        /* A grafikon dobozának fix magasság kell: ha a tartalomhoz igazodna, a grafikon végtelenül nőne */
+        @media (min-width: 760px) {
+            .stats-grid { grid-template-columns: 1fr 1fr; }
+            .chart-box { height: 300px; }
+        }
+    </style>
+</head>
+<body>
+<div class="console">
+    <header class="console-head">
+        <a href="./">← Gyakorlás</a>
+        <h1>👨‍👩‍👧 Szülői / tanári felület</h1>
+        <div class="who" id="who" hidden>
+            <span id="who-email"></span>
+            <button class="link" onclick="logout()">Kijelentkezés</button>
+        </div>
+    </header>
+
+    <p class="muted" id="loading">Betöltés…</p>
+
+    <!-- Belépés: e-mailes belépő link (csak meghívottaknak) -->
+    <section class="card" id="view-login" hidden>
+        <h2>🔑 Belépés</h2>
+        <p class="muted">Add meg az e-mail címed, és küldünk egy belépő linket. Csak meghívott szülők és tanárok léphetnek be.</p>
+        <form id="login-form" onsubmit="sendLoginLink(event)">
+            <input type="email" id="login-email" required placeholder="nev@pelda.hu" autocomplete="email">
+            <button class="btn" id="login-btn">Belépő link küldése</button>
+        </form>
+        <p class="msg" id="login-msg"></p>
+    </section>
+
+    <section class="card" id="view-noaccess" hidden>
+        <h2>🚫 Nincs meghívód</h2>
+        <p>Ehhez az e-mail címhez nincs meghívó. Kérj meghívót a szülőtől vagy a tanártól, aki már használja a felületet.</p>
+        <button class="btn secondary" onclick="logout()">Kijelentkezés</button>
+    </section>
+
+    <!-- Kezdőlap: csoportok, gyerekek, meghívások -->
+    <div id="view-home" hidden>
+        <div class="console" id="groups"></div>
+
+        <section class="card" id="new-group-card" hidden>
+            <h2>➕ Új csoport</h2>
+            <p class="muted">Család (a saját gyerekeidnek) vagy osztály (tanárként).</p>
+            <form onsubmit="createGroup(event)">
+                <input id="group-name" required maxlength="60" placeholder="pl. Kovács család vagy 3.b">
+                <select id="group-kind">
+                    <option value="family">🏠 Család</option>
+                    <option value="class">🏫 Osztály</option>
+                </select>
+                <button class="btn">Létrehozás</button>
+            </form>
+        </section>
+
+        <section class="card" id="admin-card" hidden>
+            <h2>🛡️ Meghívás saját csoporttal</h2>
+            <p class="muted">Tanár vagy szülő meghívása, aki saját csoportot (osztályt / családot) hozhat létre.</p>
+            <form onsubmit="inviteCreator(event)">
+                <input type="email" id="creator-email" required placeholder="tanar@iskola.hu">
+                <button class="btn">Meghívás</button>
+            </form>
+            <p class="msg" id="creator-msg"></p>
+        </section>
+
+        <section class="card" id="pending-card" hidden>
+            <h2>✉️ Elküldött meghívók</h2>
+            <ul class="members" id="pending-list"></ul>
+        </section>
+    </div>
+
+    <!-- Egy gyerek: statisztika, eszközök, kód -->
+    <div class="console" id="view-child" hidden>
+        <div><button class="link" onclick="showHome()">← Vissza a csoportokhoz</button></div>
+        <section class="card">
+            <div class="child-head"><span id="child-avatar"></span><span id="child-name"></span></div>
+            <p class="muted" id="child-groups"></p>
+        </section>
+
+        <section class="card">
+            <h2>📈 Fejlődés</h2>
+            <div class="stats-grid">
+                <div>
+                    <div class="chart-box"><canvas id="child-chart"></canvas></div>
+                    <p class="muted" id="child-summary"></p>
+                </div>
+                <div class="heatmap-card">
+                    <div class="op-toggle">
+                        <button class="selected" onclick="setChildHeatmapOp('mul', this)"><b>×</b> Szorzás</button>
+                        <button onclick="setChildHeatmapOp('div', this)">➗ Osztás</button>
+                    </div>
+                    <div class="heatmap-wrap"><div class="heatmap" id="child-heatmap"></div></div>
+                    <div class="hm-legend">
+                        <span>nem megy <i class="hm-l0"></i><i class="hm-l1"></i><i class="hm-l2"></i><i class="hm-l3"></i><i class="hm-l4"></i> biztos</span>
+                        <span><i class="hm-none"></i> még nem volt</span>
+                        <span title="átlagosan 6 másodpercnél lassabb válasz"><i class="hm-slow-dot"></i> lassú</span>
+                    </div>
+                    <div class="hm-detail" id="child-hm-detail"></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>📱 Eszközök</h2>
+            <p class="muted">A gyerek eszközén: Szorzótábla Mester → lent „☁️ Eszköz összekötése” → kód beírása. Egy kód 24 óráig érvényes és egyszer használható.</p>
+            <ul class="members" id="device-list"></ul>
+            <div class="row">
+                <button class="btn" onclick="newDeviceCode()">🔑 Új eszköz-kód</button>
+            </div>
+            <div class="code-box" id="code-box" hidden>
+                <div class="code" id="code-value"></div>
+                <p class="muted" id="code-expiry"></p>
+                <div class="row" style="justify-content:center">
+                    <button class="btn secondary" onclick="shareDeviceCode()">📤 Kód küldése a gyerek eszközére</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>⚠️ Törlés</h2>
+            <div class="row">
+                <button class="btn danger" onclick="clearChildStats()">Statisztika törlése</button>
+                <button class="btn danger" id="delete-child-btn" onclick="deleteChild()">Gyerek törlése</button>
+            </div>
+        </section>
+    </div>
+
+    <!-- Rövid adatkezelési tájékoztató (gyerekek adatairól van szó) -->
+    <section class="card">
+        <details>
+            <summary>🔒 Milyen adatot tárolunk?</summary>
+            <div class="muted" style="display:flex; flex-direction:column; gap:6px">
+                <p><strong>Felnőttek:</strong> az e-mail cím (a belépéshez) és hogy melyik csoport tagja.</p>
+                <p><strong>Gyerekek:</strong> csak becenév és avatar – valódi nevet, e-mail címet, születési dátumot nem kérünk.
+                    A gyakorlás eredményei: melyik feladat, elsőre jó / csonttal javított / hibás, a válaszidő és a tesztek százaléka.</p>
+                <p><strong>Ki látja:</strong> csak a gyerek csoportjának felnőtt tagjai és a gyerek saját, összekötött eszközei.
+                    Ezt az adatbázis szabályai biztosítják, nem csak a felület.</p>
+                <p><strong>Hol:</strong> a Supabase szolgáltatásnál, az Európai Unióban (Írország). Reklámra vagy bármi másra nem használjuk, harmadik félnek nem adjuk át.</p>
+                <p><strong>Törlés:</strong> a gyerek eredményei és profilja ezen a felületen bármikor törölhetők (a törlés végleges).
+                    Felnőtt fiók törlését a csoport tulajdonosánál vagy az app üzemeltetőjénél kérheted.</p>
+                <p>Összekötés nélkül a gyakorló app semmit nem küld sehova: minden csak az eszközön marad.</p>
+            </div>
+        </details>
+    </section>
+</div>
+<div class="toast" id="toast" hidden></div>
+<script src="szulo.js"></script>
+</body>
+</html>

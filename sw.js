@@ -7,6 +7,13 @@ const CACHE = PREFIX + VERSION;
 const FILES = [
     './',
     'szorzotabla.html',
+    'stats.js',
+    'common.css',
+    'config.js',
+    'cloud.js',
+    'szulo.html',
+    'szulo.js',
+    'vendor/supabase.js',
     'manifest.webmanifest',
     'icon.svg',
     'icon-192.png',

@@ -25,60 +25,15 @@
     <script src="vendor/chart.umd.min.js"></script>
     <!-- Canvas Confetti 1.6.0 a sikerélményhez (helyi másolat) -->
     <script src="vendor/confetti.browser.min.js"></script>
+    <!-- Közös statisztika (feladat-térkép, grafikon) – a szülői felület is ezt használja -->
+    <script src="stats.js"></script>
+    <!-- Felhő (Supabase 2.118.0, helyi másolat): eszköz összekötése és az eredmények szinkronja -->
+    <script src="vendor/supabase.js"></script>
+    <script src="config.js"></script>
+    <script src="cloud.js"></script>
+    <!-- Közös színek (világos / sötét mód) és a feladat-térkép stílusa -->
+    <link rel="stylesheet" href="common.css">
     <style>
-        :root {
-            --primary: #4f46e5;
-            --primary-hover: #4338ca;
-            --secondary: #06b6d4;
-            --success: #10b981;
-            --danger: #ef4444;
-            --warning: #f59e0b;
-            --bg-grad-1: #e0e7ff;
-            --bg-grad-2: #c7d2fe;
-            --card-bg: #ffffff;
-            --text-dark: #1e293b;
-            --text-muted: #64748b;
-            --primary-text: #4f46e5; /* lila szöveg (sötét módban világosabb, hogy olvasható legyen) */
-            --surface: #f8fafc; /* kártyák a kártyán belül */
-            --surface-2: #f1f5f9; /* fülsáv, számbillentyűk */
-            --raised: #ffffff; /* kiemelt elemek: aktív fül, gombok, dobozok */
-            --input-bg: #ffffff; /* a válasz mezője */
-            --border: #e2e8f0;
-            --border-strong: #cbd5e1;
-            --selected-bg: #eef2ff;
-            --danger-bg: #fee2e2;
-            --danger-border: #fca5a5;
-            --warn-bg: #fffbeb;
-            --warn-text: #b45309;
-            --hm-none-bg: #e2e8f0;
-            --hm-none-text: #94a3b8;
-            --border-radius: 20px;
-        }
-
-        /* Sötét mód: a színek felülírása (a data-theme-et a fejlécben lévő szkript állítja) */
-        :root[data-theme="dark"] {
-            color-scheme: dark;
-            --bg-grad-1: #0b1120;
-            --bg-grad-2: #1e1b4b;
-            --card-bg: #111a2e;
-            --text-dark: #e2e8f0;
-            --text-muted: #94a3b8;
-            --primary-text: #a5b4fc;
-            --surface: #1a2438;
-            --surface-2: #243049;
-            --raised: #2b3954;
-            --input-bg: #0b1120;
-            --border: #2f3d57;
-            --border-strong: #46546f;
-            --selected-bg: #2a2a6a;
-            --danger-bg: #4c1d1d;
-            --danger-border: #7f2d2d;
-            --warn-bg: #3b2a0a;
-            --warn-text: #fbbf24;
-            --hm-none-bg: #2b3954;
-            --hm-none-text: #6b7a94;
-        }
-
         * {
             box-sizing: border-box;
             font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
@@ -650,106 +605,6 @@
             font-size: 0.8rem;
         }
 
-        /* A rács akkora, amekkora hely jut neki (szélesség és magasság közül a kisebb) */
-        .heatmap-wrap {
-            flex: 1;
-            min-height: 150px;
-            container-type: size;
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
-        }
-
-        .heatmap {
-            display: grid;
-            grid-template-columns: repeat(12, 1fr);
-            gap: 2px;
-            width: min(100cqw, calc((100cqh - 4px) * 12 / var(--hm-rows, 12)), 560px);
-            container-type: inline-size;
-        }
-
-        .hm-cell {
-            aspect-ratio: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: clamp(0.5rem, 2.8cqw, 0.85rem);
-            font-weight: 700;
-            border: none;
-            border-radius: 4px;
-            padding: 0;
-            position: relative;
-            cursor: pointer;
-            color: #1e293b;
-        }
-
-        .hm-head {
-            background: transparent;
-            color: var(--primary-text);
-            font-size: clamp(0.6rem, 3.4cqw, 1rem);
-            font-weight: 800;
-            cursor: default;
-        }
-
-        .hm-none { background: var(--hm-none-bg); color: var(--hm-none-text); }
-        .hm-l0 { background: #ef4444; color: #fff; }
-        .hm-l1 { background: #fb923c; }
-        .hm-l2 { background: #fcd34d; }
-        .hm-l3 { background: #86efac; }
-        .hm-l4 { background: #10b981; color: #fff; }
-
-        /* Lassú válasz: kis pötty a mező sarkában */
-        .hm-cell.slow::after, .hm-slow-dot::after {
-            content: '';
-            position: absolute;
-            top: 2px;
-            right: 2px;
-            width: 5px;
-            height: 5px;
-            border-radius: 50%;
-            background: #1e293b;
-        }
-
-        .hm-cell.selected {
-            outline: 3px solid var(--primary);
-            outline-offset: 1px;
-            z-index: 1;
-        }
-
-        .hm-legend {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 4px 10px;
-            justify-content: center;
-            font-size: 0.7rem;
-            color: var(--text-muted);
-        }
-
-        .hm-legend i {
-            display: inline-block;
-            width: 11px;
-            height: 11px;
-            border-radius: 3px;
-            vertical-align: -2px;
-            margin: 0 1px;
-            position: relative;
-        }
-
-        .hm-slow-dot { background: #fcd34d; } /* színes minta, hogy a sötét pötty mindkét módban látsszon */
-
-        /* Fix magasság: koppintáskor ne ugráljon a rács mérete */
-        .hm-detail {
-            flex: none;
-            background: var(--raised);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 6px 10px;
-            font-size: 0.78rem;
-            line-height: 1.5; /* az emojik miatt kell a nagyobb sormagasság */
-            height: calc(3 * 1.5em + 14px); /* 3 sor + padding + keret */
-            overflow: hidden;
-        }
-
         .weak-summary {
             font-size: 0.9rem;
             font-weight: 600;
@@ -881,6 +736,68 @@
             cursor: pointer;
         }
 
+        /* Összekötött eszköz: kié az eszköz (a cím alatt, kicsi) */
+        .child-chip {
+            display: block;
+            margin: -12px auto 14px;
+            padding: 4px 12px;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            background: var(--surface);
+            color: var(--text-dark);
+            font-size: 0.9rem;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .child-chip[hidden] {
+            display: none;
+        }
+
+        /* Felhő ablak (a PIN ablak stílusára) */
+        .cloud-box {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .code-input {
+            width: 100%;
+            padding: 12px;
+            font-size: 1.8rem;
+            font-weight: 800;
+            letter-spacing: 0.3em;
+            text-align: center;
+            text-transform: uppercase;
+            border: 2px solid var(--border-strong);
+            border-radius: 12px;
+            background: var(--input-bg);
+            color: var(--text-dark);
+            user-select: text;
+        }
+
+        .cloud-import {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .cloud-child {
+            font-size: 1.4rem;
+        }
+
+        .cloud-adult {
+            font-size: 0.85rem;
+        }
+
+        .cloud-adult a {
+            color: var(--primary-text);
+            font-weight: 700;
+        }
+
         /* Verzió és link megosztása: halványan a beállítások alján, hogy ne vonja el a figyelmet */
         .app-footer {
             display: flex;
@@ -956,6 +873,8 @@
     <!-- 1. BEÁLLÍTÁSOK KÉPERNYŐ -->
     <div id="screen-setup" class="screen active">
         <h1>✨ Szorzótábla Mester</h1>
+        <!-- Összekötött eszközön: kié az eszköz (koppintásra a felhő ablak) -->
+        <button class="child-chip" id="child-chip" hidden onclick="openCloudPanel()"></button>
 
         <!-- Üzemmód választás -->
         <div class="mode-selector">
@@ -1019,6 +938,8 @@
             <span id="app-version"></span>
             <span aria-hidden="true">·</span>
             <button class="link-btn" onclick="shareApp()">🔗 Link megosztása</button>
+            <span aria-hidden="true">·</span>
+            <button class="link-btn" id="cloud-footer-btn" onclick="openCloudPanel()">☁️ Eszköz összekötése</button>
         </div>
     </div>
 
@@ -1155,6 +1076,33 @@
 </div>
 <div class="toast" id="toast" hidden></div>
 
+<!-- Felhő: az eszköz összekötése a gyerekkel (kód a szülőtől / tanártól) -->
+<div class="pin-overlay" id="cloud-overlay" hidden>
+    <div class="pin-box cloud-box" role="dialog" aria-modal="true" aria-labelledby="cloud-title">
+        <h3 id="cloud-title">☁️ Eszköz összekötése</h3>
+        <div id="cloud-unlinked">
+            <p class="pin-msg">Írd be a 6 jegyű kódot, amit a szülőtől vagy a tanártól kaptál. Így az eredményeid minden eszközödön közösek lesznek, és ők is látják, hogy haladsz.</p>
+            <input class="code-input" id="cloud-code" maxlength="6" autocomplete="off" autocapitalize="characters"
+                   spellcheck="false" placeholder="ABC234" aria-label="Eszköz-kód"
+                   oninput="this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '')"
+                   onkeydown="if (event.key === 'Enter') linkDevice()">
+            <label class="cloud-import" id="cloud-import-row">
+                <input type="checkbox" id="cloud-import" checked> Az eszközön eddig gyűjtött eredmények is kerüljenek át
+            </label>
+            <p class="pin-msg error" id="cloud-error"></p>
+            <button class="btn-start" id="cloud-link-btn" onclick="linkDevice()">Összekötés</button>
+        </div>
+        <div id="cloud-linked" hidden>
+            <p class="cloud-child"><span id="cloud-avatar"></span> <strong id="cloud-name"></strong></p>
+            <p class="pin-msg" id="cloud-status"></p>
+            <button class="btn-start" onclick="syncFromPanel()">🔄 Szinkronizálás most</button>
+            <button class="link-btn cloud-unlink" onclick="unlinkDevice()">Kapcsolat bontása (szülői PIN)</button>
+        </div>
+        <p class="cloud-adult"><a href="szulo.html">👨‍👩‍👧 Szülő vagy tanár vagy? Szülői felület ➔</a></p>
+        <button class="link-btn" onclick="closeCloudPanel()">Bezárás</button>
+    </div>
+</div>
+
 <!-- Szülői PIN: a statisztikát csak a szülő törölheti -->
 <div class="pin-overlay" id="pin-overlay" hidden>
     <div class="pin-box" role="dialog" aria-modal="true" aria-labelledby="pin-title">
@@ -1201,6 +1149,7 @@
     let boneFirstAnswer = null; // a csont előtti (rossz) válasz
     let questionShownAt = 0; // válaszidő méréséhez
     let firstAnswerMs = null;
+    let currentSessionId = null; // a teszt azonosítója (a felhőben a válaszok ehhez tartoznak)
     let inputLocked = false; // válasz után a következő feladatig nem fogad bevitelt (dupla OK ellen)
     let quizRunId = 0; // kilépéskor / új tesztnél a régi időzítők érvénytelenné válnak
     let startTime = null;
@@ -1300,6 +1249,12 @@
         renderTableSelector();
         restoreAfterUpdate();
         updateSetupInfo();
+
+        // Felhő: összekötött eszköz szinkronja; a szülőtől kapott linkben (?kod=...) érkező kód beírása
+        updateCloudUI();
+        cloudSync();
+        window.addEventListener('online', () => cloudSync());
+        openCloudPanelFromLink();
 
         // Fizikai billentyűzet támogatás
         window.addEventListener('keydown', handlePhysicalKeyboard);
@@ -1415,21 +1370,8 @@
     }
 
     /* --- FELADATOK ÉS FELADATONKÉNTI STATISZTIKA --- */
-    // Egy feladat: op ('mul' vagy 'div'), table (a tábla), other (a másik szám).
-    // Szorzás: other × table = ? (a tankönyv szerint: 4-es tábla = 1 × 4, 2 × 4, 3 × 4 ...)
-    // Osztás (bennfoglalás): (other·table) : table = other
-    const OP_SYMBOL = { mul: '×', div: ':' };
-    const RECENT = 5; // ennyi legutóbbi választ tartunk meg feladatonként
-    const SLOW_MS = 6000; // ennél lassabb átlagos válasz "lassú" a térképen
-
-    function makeQuestion(op, table, other) {
-        return op === 'div'
-            ? { op, table, other, f1: table * other, f2: table, target: other }
-            : { op, table, other, f1: other, f2: table, target: table * other };
-    }
-
-    const factKey = q => `${q.op}:${q.table}:${q.other}`;
-    const questionText = q => `${q.f1} ${OP_SYMBOL[q.op]} ${q.f2}`;
+    // A feladat felépítése (makeQuestion), a feladatonkénti statisztika számítása és a térkép / grafikon
+    // kirajzolása a közös stats.js-ben van (a szülői felület is azt használja).
 
     function buildDeck(tables, op) {
         const deck = [];
@@ -1472,13 +1414,8 @@
         if (outcome === 'o' && ms != null) f.ms = [...f.ms, Math.round(ms)].slice(-RECENT);
         facts[factKey(q)] = f;
         localStorage.setItem('szorzo_facts', JSON.stringify(facts));
+        cloudQueueAnswer(q, outcome, ms, currentMode, currentSessionId);
     }
-
-    // Gyakorlásra vár, ha nemrég hibás vagy csonttal javított volt, és azóta nincs két egymás utáni jó válasza
-    const isWeak = f => /[bx]/.test(f.r) && !f.r.endsWith('oo');
-    // 0..1: a legutóbbi válaszok átlaga (elsőre jó = 1, csonttal = 0,5, hibás = 0)
-    const factScore = f => [...f.r].reduce((s, c) => s + (c === 'o' ? 1 : c === 'b' ? 0.5 : 0), 0) / f.r.length;
-    const avgMs = f => f.ms.length ? f.ms.reduce((a, b) => a + b, 0) / f.ms.length : null;
 
     function weakQuestions() {
         const facts = loadFacts();
@@ -1532,6 +1469,7 @@
         currentAnswerInput = "";
         isBoneRetryState = false;
         quizRunId++;
+        currentSessionId = newId();
         startTime = new Date();
 
         // Képernyő váltás
@@ -1730,10 +1668,26 @@
         }
 
         // Mentés LocalStorage-ba
+        const finishedAt = new Date();
         saveResultToStorage({
-            date: new Date().toLocaleDateString('hu-HU', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            date: finishedAt.toLocaleDateString('hu-HU', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
             pct: pct,
-            mode: currentMode
+            mode: currentMode,
+            at: finishedAt.toISOString()
+        });
+        // Összekötött eszközön a felhőbe is (internet nélkül sorban vár)
+        cloudQueueSession({
+            id: currentSessionId,
+            mode: currentMode,
+            op: currentMode === 'weak' ? null : currentOp,
+            tables: currentMode === 'weak' ? [] : selectedTables,
+            total: totalTasks,
+            correct: score,
+            errors: errorsCount,
+            bones_used: bonesUsed,
+            duration_s: durationSec,
+            pct: pct,
+            finished_at: finishedAt.toISOString()
         });
 
         // Képernyőváltás
@@ -1752,6 +1706,10 @@
     // Törölni csak a szülő tud, PIN-nel
     function clearHistory() {
         playSound('click');
+        if (linkedChild()) {
+            alert('Ez az eszköz össze van kötve, így a statisztikát a szülő vagy a tanár törölheti a szülői felületen.');
+            return;
+        }
         requireParentPin(() => {
             if (confirm("Biztosan törölni szeretnéd az eddigi statisztikát (grafikon és feladat-térkép)?")) {
                 localStorage.removeItem('szorzo_history');
@@ -1857,66 +1815,13 @@
         renderHeatmap();
     }
 
-    function heatLevel(f) {
-        const s = factScore(f);
-        return s >= 0.9 ? 4 : s >= 0.7 ? 3 : s >= 0.5 ? 2 : s >= 0.3 ? 1 : 0;
-    }
-
     function renderHeatmap() {
-        const facts = loadFacts();
-        const isDiv = heatmapOp === 'div';
-        const grid = document.getElementById('heatmap');
-        grid.innerHTML = '';
-        grid.style.setProperty('--hm-rows', isDiv ? 11 : 12); // a rács méretezéséhez (fejléc + táblák)
-        document.getElementById('hm-detail').innerText = isDiv
-            ? 'Sor: osztó, oszlop: hányados (a 7-es sor 8-as oszlopa: 56 : 7). Koppints egy mezőre a részletekért!'
-            : 'Sor: melyik tábla, oszlop: hányszor (a 7-es sor 8-as oszlopa: 8 × 7). Koppints egy mezőre a részletekért!';
-
-        const addHead = text => {
-            const el = document.createElement('div');
-            el.className = 'hm-cell hm-head';
-            el.innerText = text;
-            grid.appendChild(el);
-        };
-
-        addHead(OP_SYMBOL[heatmapOp]);
-        for (let c = 0; c <= 10; c++) addHead(c);
-        for (let t = isDiv ? 1 : 0; t <= 10; t++) {
-            addHead(t);
-            for (let c = 0; c <= 10; c++) {
-                const q = makeQuestion(heatmapOp, t, c);
-                const f = facts[factKey(q)];
-                const cell = document.createElement('button');
-                cell.className = `hm-cell ${f ? 'hm-l' + heatLevel(f) : 'hm-none'}`;
-                if (f && avgMs(f) > SLOW_MS) cell.classList.add('slow');
-                cell.innerText = isDiv ? q.f1 : q.target; // osztásnál az osztandó, szorzásnál a szorzat
-                cell.title = `${questionText(q)} = ${q.target}`;
-                cell.onclick = () => showFactDetail(q, f, cell);
-                grid.appendChild(cell);
-            }
-        }
+        renderHeatmapGrid(document.getElementById('heatmap'), document.getElementById('hm-detail'), loadFacts(), heatmapOp);
 
         const weakCount = weakQuestions().length;
         document.getElementById('weak-summary').innerHTML = weakCount
             ? `🎯 ${weakCount} feladat vár gyakorlásra <button class="btn-weak-go" onclick="practiceWeakNow()">Gyakorold ➔</button>`
             : '🎉 Nincs gyakorlásra váró hibás feladat.';
-    }
-
-    function showFactDetail(q, f, cell) {
-        document.querySelectorAll('.hm-cell.selected').forEach(c => c.classList.remove('selected'));
-        cell.classList.add('selected');
-        const el = document.getElementById('hm-detail');
-        const title = `<strong>${questionText(q)} = ${q.target}</strong>`;
-        if (!f) {
-            el.innerHTML = `${title}<br>Még nem szerepelt.`;
-            return;
-        }
-        const icons = { o: '✅', b: '🦴', x: '❌' };
-        const ms = avgMs(f);
-        el.innerHTML = `${title}${isWeak(f) ? ' · 🎯 gyakorlásra vár' : ''}<br>` +
-            `${f.n} válasz: ✅ ${f.ok} · 🦴 ${f.bone} · ❌ ${f.bad}` +
-            (ms !== null ? ` · átlag ${(ms / 1000).toFixed(1).replace('.', ',')} mp` : '') +
-            `<br>Legutóbbiak: ${[...f.r].map(c => icons[c]).join(' ')}`;
     }
 
     function practiceWeakNow() {
@@ -1925,58 +1830,8 @@
     }
 
     function renderChart() {
-        if (typeof Chart === 'undefined') return;
         const history = JSON.parse(localStorage.getItem('szorzo_history') || '[]');
-        const ctx = document.getElementById('progressChart').getContext('2d');
-
-        if (chartInstance) {
-            chartInstance.destroy();
-        }
-
-        // Rövid felirat a tengelyen (kevés hely van), a dátum a buborékban látszik
-        const labels = history.map((h, idx) => `${idx + 1}.`);
-        const dataPct = history.map(h => h.pct);
-        // A színek a témából jönnek (világos / sötét mód)
-        const css = getComputedStyle(document.documentElement);
-        const themeColor = name => css.getPropertyValue(name).trim();
-        const axis = { ticks: { color: themeColor('--text-muted') }, grid: { color: themeColor('--border') } };
-
-        chartInstance = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'Eredmény (%)',
-                    data: dataPct,
-                    borderColor: themeColor('--primary-text'),
-                    backgroundColor: 'rgba(79, 70, 229, 0.15)',
-                    borderWidth: 3,
-                    fill: true,
-                    tension: 0.3,
-                    pointRadius: 5,
-                    pointBackgroundColor: '#06b6d4'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    x: axis,
-                    y: {
-                        min: 0,
-                        max: 100,
-                        grid: axis.grid,
-                        ticks: { ...axis.ticks, callback: value => value + '%', maxTicksLimit: 6 }
-                    }
-                },
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        callbacks: { title: items => `${items[0].label} teszt – ${history[items[0].dataIndex].date}` }
-                    }
-                }
-            }
-        });
+        chartInstance = buildProgressChart(document.getElementById('progressChart'), history, chartInstance);
     }
 
     /* --- OFFLINE MŰKÖDÉS / TELEPÍTHETŐ APP --- */
@@ -2084,7 +1939,7 @@
     }
 
     /* --- VERZIÓ ÉS MEGOSZTÁS --- */
-    const APP_VERSION = '1.1';
+    const APP_VERSION = '1.2';
     const APP_BUILD = 'dev'; // a közzététel (GitHub Actions) írja át a commit rövid azonosítójára
     const APP_URL = 'https://vmynick.github.io/matek-gyakorlo/';
 
@@ -2111,6 +1966,114 @@
         } catch (e) {
             showToast(APP_URL);
         }
+    }
+
+    /* --- FELHŐ: AZ ESZKÖZ ÖSSZEKÖTÉSE A GYEREKKEL (cloud.js) --- */
+    function updateCloudUI() {
+        const child = linkedChild();
+        const chip = document.getElementById('child-chip');
+        chip.hidden = !child;
+        if (child) chip.innerText = `${child.avatar} ${child.nickname}`;
+        document.getElementById('cloud-footer-btn').innerText = child ? '☁️ Felhő' : '☁️ Eszköz összekötése';
+    }
+
+    function openCloudPanel(code) {
+        playSound('click');
+        const child = linkedChild();
+        document.getElementById('cloud-unlinked').hidden = !!child;
+        document.getElementById('cloud-linked').hidden = !child;
+        document.getElementById('cloud-error').innerText = '';
+        if (child) {
+            document.getElementById('cloud-avatar').innerText = child.avatar;
+            document.getElementById('cloud-name').innerText = child.nickname;
+            showCloudStatus();
+        } else {
+            const history = JSON.parse(localStorage.getItem('szorzo_history') || '[]');
+            document.getElementById('cloud-import-row').hidden = !Object.keys(loadFacts()).length && !history.length;
+            document.getElementById('cloud-code').value = typeof code === 'string' ? code : '';
+        }
+        document.getElementById('cloud-overlay').hidden = false;
+    }
+
+    function closeCloudPanel() {
+        document.getElementById('cloud-overlay').hidden = true;
+    }
+
+    function showCloudStatus() {
+        const box = cloudOutbox();
+        const waiting = box.answers.length + box.sessions.length;
+        const last = localStorage.getItem('szorzo_last_sync');
+        const lastText = last
+            ? new Date(last).toLocaleString('hu-HU', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+            : 'még nem volt';
+        document.getElementById('cloud-status').innerText =
+            (waiting ? `${waiting} eredmény vár feltöltésre${navigator.onLine ? '' : ' (nincs internet)'}. ` : 'Minden eredmény fent van. ') +
+            `Utolsó szinkron: ${lastText}.`;
+    }
+
+    async function linkDevice() {
+        const code = document.getElementById('cloud-code').value.trim().toUpperCase();
+        const errorEl = document.getElementById('cloud-error');
+        if (!/^[A-Z2-9]{6}$/.test(code)) {
+            errorEl.innerText = 'A kód 6 karakter (betűk és számok).';
+            return;
+        }
+        const btn = document.getElementById('cloud-link-btn');
+        btn.disabled = true;
+        btn.innerText = 'Összekötés…';
+        errorEl.innerText = '';
+        try {
+            const child = await cloudLink(code, document.getElementById('cloud-import').checked);
+            closeCloudPanel();
+            onCloudSynced();
+            showToast(`☁️ Összekötve: ${child.avatar} ${child.nickname}`);
+        } catch (e) {
+            errorEl.innerText = e.message;
+        } finally {
+            btn.disabled = false;
+            btn.innerText = 'Összekötés';
+        }
+    }
+
+    async function syncFromPanel() {
+        playSound('click');
+        document.getElementById('cloud-status').innerText = 'Szinkronizálás…';
+        const ok = await cloudSync();
+        if (!linkedChild()) {
+            closeCloudPanel();
+            return;
+        }
+        showCloudStatus();
+        if (!ok) showToast(navigator.onLine ? '⚠️ Most nem sikerült, később újra próbálja.' : '📴 Nincs internet, az eredmények megvárják.');
+    }
+
+    // A kapcsolat bontása szülői PIN-hez kötött (a gyerek ne tudja véletlenül megszüntetni)
+    function unlinkDevice() {
+        closeCloudPanel();
+        requireParentPin(async () => {
+            if (!confirm('Biztosan bontod az eszköz kapcsolatát? A gyerek eredményei a felhőben megmaradnak.')) return;
+            await cloudUnlink();
+            onCloudSynced();
+            showToast('☁️ Az eszköz kapcsolata megszűnt');
+        });
+    }
+
+    // Szinkron után: a jelvény, a hibák gyakorlása és (ha látszik) a statisztika frissítése
+    function onCloudSynced() {
+        updateCloudUI();
+        updateSetupInfo();
+        if (document.getElementById('screen-stats').classList.contains('active')) {
+            renderChart();
+            renderHeatmap();
+        }
+    }
+
+    // A szülői felületről küldött link (...?kod=ABC234): a kód beírva vár az összekötő ablakban
+    function openCloudPanelFromLink() {
+        const code = (new URLSearchParams(location.search).get('kod') || '').toUpperCase();
+        if (!code) return;
+        window.history.replaceState(null, '', location.pathname);
+        if (/^[A-Z2-9]{6}$/.test(code)) openCloudPanel(code);
     }
 
     /* --- SÖTÉT MÓD --- */
