@@ -301,6 +301,43 @@
             transform: rotate(45deg);
         }
 
+        /* Csillagok és célok */
+        .stars-line {
+            font-size: 1.1rem;
+        }
+
+        .stars-line strong {
+            font-size: 1.5rem;
+        }
+
+        .goal-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 10px 12px;
+            border: 2px solid var(--star-border);
+            border-radius: 12px;
+            background: var(--star-bg);
+        }
+
+        .goal-item.redeemed {
+            opacity: 0.65;
+            border-style: dashed;
+        }
+
+        .goal-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            font-weight: 700;
+        }
+
+        .goal-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
         /* Jogosultság-kapcsolók (admin) */
         .toggle-row {
             display: flex;
@@ -684,7 +721,8 @@
             <div class="muted privacy" id="privacy-text">
                 <p><strong>Felnőttek:</strong> az e-mail cím (a belépéshez) és hogy melyik csoport tagja.</p>
                 <p><strong>Gyerekek:</strong> csak becenév és avatar – valódi nevet, e-mail címet, születési dátumot nem kérünk.
-                    A gyakorlás eredményei: melyik feladat, elsőre jó / csonttal javított / hibás, a válaszidő és a tesztek százaléka.</p>
+                    A gyakorlás eredményei: melyik feladat, elsőre jó / csonttal javított / hibás, a válaszidő és a tesztek százaléka;
+                    a felnőttektől kapott csillagok, a kitűzött célok és a kiosztott feladatok.</p>
                 <p><strong>Ki látja:</strong> csak a gyerek csoportjának felnőtt tagjai és a gyerek saját, összekötött eszközei.
                     Ezt az adatbázis szabályai biztosítják, nem csak a felület.</p>
                 <p><strong>Hol:</strong> a Supabase szolgáltatásnál, az Európai Unióban (Írország). Reklámra vagy bármi másra nem használjuk, harmadik félnek nem adjuk át.</p>
@@ -744,17 +782,19 @@
         <!-- Admin -->
         <div class="console" id="admin-card" hidden>
             <section class="card">
-                <h2>✉️ Meghívás saját csoporttal</h2>
-                <p class="muted">Tanár vagy szülő, aki saját csoportot (osztályt / családot) hozhat létre. Belépő linket kap e-mailben.</p>
+                <h2>✉️ Szülő vagy tanár meghívása</h2>
+                <p class="muted">Belépő linket kap e-mailben. A szülő családot hoz létre a saját gyerekeinek, a tanár osztályt.</p>
                 <form onsubmit="inviteCreator(event)">
-                    <input type="email" id="creator-email" required placeholder="tanar@iskola.hu">
+                    <input type="email" id="creator-email" required placeholder="nev@pelda.hu">
+                    <label class="toggle-row"><input type="checkbox" id="creator-family" checked> 🏠 Szülő – családot hozhat létre</label>
+                    <label class="toggle-row"><input type="checkbox" id="creator-class"> 🏫 Tanár – osztályt hozhat létre</label>
                     <button class="btn">Meghívás</button>
                 </form>
                 <p class="msg" id="creator-msg"></p>
             </section>
             <section class="card">
-                <h2>👥 Felnőttek <span class="badge" id="admin-count"></span></h2>
-                <p class="muted">Minden regisztrált felnőtt és a jogai; koppints egy sorra a módosításhoz. A gyerekek eredményeibe innen nem látsz bele.</p>
+                <h2>👥 Felhasználók <span class="badge" id="admin-count"></span></h2>
+                <p class="muted">Minden szülő és tanár, és hogy mit tehet; koppints egy sorra a módosításhoz. A gyerekek eredményeibe innen nem látsz bele.</p>
                 <div class="settings-list" id="admin-adults"></div>
             </section>
         </div>
@@ -828,15 +868,31 @@
         <section class="card">
             <h2>👧 Gyerekek</h2>
             <ul class="members" id="group-children"></ul>
+            <div class="settings-list">
+                <details class="setting" id="group-grant-box">
+                    <summary>
+                        <span class="s-icon">🎁</span>
+                        <span class="s-text"><strong>Csillag mindenkinek</strong><small>jutalom az egész csoportnak</small></span>
+                    </summary>
+                    <div class="setting-body">
+                        <form class="row" onsubmit="grantGroupStars(event)">
+                            <select id="group-grant-amount" aria-label="Csillagok száma"><option value="1">1 ⭐</option><option value="2">2 ⭐</option><option value="3" selected>3 ⭐</option><option value="5">5 ⭐</option><option value="10">10 ⭐</option></select>
+                            <input id="group-grant-note" maxlength="80" placeholder="Üzenet (pl. Ügyesek voltatok!)">
+                            <button class="btn">🎁 Küldés</button>
+                        </form>
+                    </div>
+                </details>
+            </div>
         </section>
 
         <section class="card">
             <h2>📌 Kiosztott feladatok</h2>
-            <div class="settings-list">
+            <!-- A feladat-űrlap itt van, vagy egy gyerek oldalán (egy gyereknek szóló feladat) -->
+            <div class="settings-list" id="group-assign-slot">
                 <details class="setting" id="assign-box">
                     <summary>
                         <span class="s-icon">➕</span>
-                        <span class="s-text"><strong>Új feladat kiosztása</strong><small>táblák, művelet, darabszám, határidő</small></span>
+                        <span class="s-text"><strong>Új feladat kiosztása</strong><small id="assign-sub"></small></span>
                     </summary>
                     <div class="setting-body">
                         <form class="assign-form" onsubmit="createAssignment(event)">
@@ -898,9 +954,60 @@
             </div>
         </section>
 
-        <section class="card" id="child-assignments-card" hidden>
-            <h2>📌 Kiosztott feladatok</h2>
+        <section class="card" id="child-assignments-card">
+            <h2>📌 Feladatok</h2>
             <ul class="members" id="child-assignments"></ul>
+            <div class="settings-list" id="child-assign-slot"></div>
+        </section>
+
+        <section class="card" id="child-stars-card">
+            <h2>⭐ Csillagok és célok</h2>
+            <p class="stars-line"><strong id="child-stars-total">0</strong> ⭐ <span class="muted" id="child-stars-sub"></span></p>
+            <div class="goal-list" id="child-goals"></div>
+            <div class="settings-list">
+                <details class="setting" id="goal-box">
+                    <summary>
+                        <span class="s-icon">🎯</span>
+                        <span class="s-text"><strong>Új cél kitűzése</strong><small>pl. 30 ⭐ = fagyi; a kitűzés után gyűjtött csillagok számítanak</small></span>
+                    </summary>
+                    <div class="setting-body">
+                        <p class="muted">Mi a jutalom, és hány csillag kell hozzá? A gyerek az appban látja, mennyi hiányzik még; ha összegyűlt, itt jelölheted beváltottnak.</p>
+                        <div class="avatars" id="goal-emojis"></div>
+                        <form class="row" onsubmit="createGoal(event)">
+                            <input id="goal-title" required maxlength="40" placeholder="Jutalom (pl. Mozi)">
+                            <input type="number" id="goal-target" min="1" max="1000" value="30" aria-label="Csillagok száma" title="Hány csillag kell hozzá">
+                            <button class="btn">🎯 Kitűzés</button>
+                        </form>
+                    </div>
+                </details>
+                <details class="setting" id="grant-box">
+                    <summary>
+                        <span class="s-icon">🎁</span>
+                        <span class="s-text"><strong>Csillag ajándékozása</strong><small>jutalom egy szép teljesítményért</small></span>
+                    </summary>
+                    <div class="setting-body">
+                        <form class="row" onsubmit="grantStars(event)">
+                            <select id="grant-amount" aria-label="Csillagok száma"><option value="1">1 ⭐</option><option value="2">2 ⭐</option><option value="3" selected>3 ⭐</option><option value="5">5 ⭐</option><option value="10">10 ⭐</option></select>
+                            <input id="grant-note" maxlength="80" placeholder="Üzenet (pl. Ügyes voltál!)">
+                            <button class="btn">🎁 Küldés</button>
+                        </form>
+                    </div>
+                </details>
+                <details class="setting" id="grants-box">
+                    <summary>
+                        <span class="s-icon">🧾</span>
+                        <span class="s-text"><strong>Ajándékba kapott csillagok</strong><small id="grants-sub"></small></span>
+                    </summary>
+                    <div class="setting-body"><ul class="members" id="grant-list"></ul></div>
+                </details>
+                <details class="setting">
+                    <summary>
+                        <span class="s-icon">ℹ️</span>
+                        <span class="s-text"><strong>Hogyan gyűjt csillagot?</strong><small>a gyakorló app magától adja</small></span>
+                    </summary>
+                    <div class="setting-body muted" id="star-rules"></div>
+                </details>
+            </div>
         </section>
 
         <section class="card">

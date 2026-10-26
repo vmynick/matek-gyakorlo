@@ -22,7 +22,11 @@ Szorzótábla- és bennfoglalás-gyakorló web-app alsósoknak, tabletre és tel
 ## Szülőknek és tanároknak (felhő, nem kötelező)
 
 - A szülő vagy tanár **meghívóval** kap hozzáférést, és **e-mailes belépő linkkel** lép be, jelszó nélkül.
-- **Csoportok:** családot vagy osztályt hoz létre, gyerekeket ad hozzá (csak becenév és avatar), más felnőtteket hív meg.
+- **Szerepek:**
+  - **🏠 Szülő:** családot hoz létre a gyerekeinek; a másik szülőt, nagyszülőt családtagként hívja meg;
+  - **🏫 Tanár:** osztályt hoz létre, tanártársat és szülőket hív meg;
+  - **🛡️ Admin:** szülőket és tanárokat hív meg, és a szerepüket is állítja.
+- **Csoportok:** a család vagy az osztály; gyerekeket ad hozzá (csak becenév és avatar).
 - **A gyerek eszközét egy 6 jegyű kód köti össze** a gyerek profiljával. A gyereknek nem kell fiók. Ezután az eredményei minden eszközén közösek, és a felnőttek látják a grafikonját és a feladat-térképét.
 - **Internet nélkül is lehet gyakorolni:** az eredmények megvárják a következő kapcsolatot.
 - **Közös tablet:** több gyerek is használhatja ugyanazt az eszközt. Induláskor „Ki gyakorol most?”, a gyerek-PIN nem kötelező.
@@ -30,15 +34,20 @@ Szorzótábla- és bennfoglalás-gyakorló web-app alsósoknak, tabletre és tel
   - a szülő a gyerekeit látja elöl;
   - a tanár az osztályait, közös feladat-térképpel. Ezen egy mezőre koppintva látszik, kinek kell még gyakorolnia;
   - fülek: 🏠 Családom / 🏫 Osztályaim / 🛡️ Admin / 👤 Fiók. Elöl a gyerekek és az eredmények, a beállítások összecsukható listában;
-  - a fejlécben látszik, milyen jogosultsággal (admin, szülő, tanár) vagy belépve.
+  - a fejlécben látszik, milyen szerepben (admin, szülő, tanár) vagy belépve.
 - **Osztály:**
   - a tanár csatlakozási kódot ad, a szülő azzal teszi be a gyerekét az osztályba;
   - a tanár szülőket is meghívhat;
   - a családi gyerek eszközeit, PIN-jét és törlését továbbra is a család kezeli.
 - **Kiosztott feladatok:**
   - például „7-es tábla, osztás, 20 db, péntekig”;
+  - az egész csoportnak vagy egy gyereknek (a szülő a saját gyerekének, a tanár egy diákjának);
   - a gyerek appjában „📌 Feladat” kártya jelenik meg, egy gombbal indul;
   - a felnőtt látja, ki teljesítette és hány százalékkal.
+- **Csillagok és célok:**
+  - a gyerek gyakorlásért csillagot kap: 1 ⭐ minden legalább 10 feladatos tesztért, +1 ⭐, ha hibátlan, +2 ⭐ egy kiosztott feladatért;
+  - a szülő és a tanár csillagot ajándékozhat (egy gyereknek vagy az egész csoportnak), és célt tűzhet ki (pl. „30 ⭐ = fagyi”);
+  - a gyerek appjában látszik, mennyi hiányzik még; az elért célt a felnőtt jelöli beváltottnak.
 
 ## Adatok
 

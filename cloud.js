@@ -12,7 +12,7 @@ const CLOUD_CHILDREN_KEY = 'szorzo_children'; // [{ id, nickname, avatar, pin_ha
 const CLOUD_ACTIVE_KEY = 'szorzo_active_child'; // az éppen gyakorló gyerek azonosítója
 const CLOUD_OUTBOX_KEY = 'szorzo_outbox'; // { answers: [], sessions: [] }
 const CLOUD_SYNC_KEY = 'szorzo_last_sync';
-const CHILD_CACHE_KEYS = ['szorzo_facts', 'szorzo_history', 'szorzo_assignments'];
+const CHILD_CACHE_KEYS = ['szorzo_facts', 'szorzo_history', 'szorzo_assignments', 'szorzo_stars'];
 const CLOUD_UPLOAD_BATCH = 200;
 
 let cloudClient = null;
@@ -209,20 +209,47 @@ async function cloudPull(childId) {
         .order('finished_at', { ascending: false }).limit(20);
     if (sessionError) throw sessionError;
     const assignments = await cloudFetchAssignments(childId);
+    const { data: stars, error: starError } = await cloud().rpc('child_stars', { p_child_id: childId });
+    if (starError) console.warn('Csillagok:', starError);
     if (cloudRead(CLOUD_ACTIVE_KEY, null) !== childId) return; // közben gyereket váltottak
     cloudWrite('szorzo_facts', factsFromCloud(facts));
     cloudWrite('szorzo_history', historyFromCloud(sessions));
     cloudWrite('szorzo_assignments', assignments);
+    if (stars) {
+        // seen: a már megmutatott ajándékok, celebrated: a már megünnepelt célok. Az első letöltéskor a régiek
+        // nem ugranak fel.
+        const old = cloudRead('szorzo_stars', null);
+        cloudWrite('szorzo_stars', {
+            ...stars,
+            seen: old && old.seen ? old.seen : stars.grants.map(g => g.id),
+            celebrated: old && old.celebrated ? old.celebrated
+                : stars.goals.filter(g => g.progress >= g.target).map(g => g.id),
+        });
+    }
 }
 
-// A gyerek csoportjainak kiosztott feladatai, jelölve, melyiket csinálta már meg (szorzo_assignments)
+// Befejezett teszt csillagai helyben, rögtön (a következő szinkron a felhőben számoltat hozza). Visszatérés: hány csillag.
+function cloudAddStars(session, firstTryOfAssignment) {
+    if (!linkedChild()) return 0;
+    const n = sessionStars(session, firstTryOfAssignment);
+    const stars = cloudRead('szorzo_stars', null);
+    if (n && stars) {
+        stars.total += n;
+        stars.goals.forEach(g => { if (!g.redeemed_at) g.progress = Math.min(g.target, g.progress + n); });
+        cloudWrite('szorzo_stars', stars);
+    }
+    return n;
+}
+
+// A gyerek csoportjainak kiosztott feladatai (a csoportnak vagy csak neki), jelölve, melyiket csinálta már meg
 async function cloudFetchAssignments(childId) {
     const { data: links, error } = await cloud().from('child_groups').select('group_id').eq('child_id', childId);
     if (error) throw error;
     if (!links.length) return [];
     const { data: tasks, error: taskError } = await cloud().from('assignments')
         .select('id, op, tables, mode, question_count, due_date, note, created_at')
-        .in('group_id', links.map(l => l.group_id)).order('created_at', { ascending: false });
+        .in('group_id', links.map(l => l.group_id)).or(`child_id.is.null,child_id.eq.${childId}`)
+        .order('created_at', { ascending: false });
     if (taskError) throw taskError;
     const { data: done, error: doneError } = await cloud().from('quiz_sessions')
         .select('assignment_id').eq('child_id', childId).not('assignment_id', 'is', null);

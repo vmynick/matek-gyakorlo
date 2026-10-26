@@ -25,6 +25,15 @@ const isWeak = f => /[bx]/.test(f.r) && !f.r.endsWith('oo');
 const factScore = f => [...f.r].reduce((s, c) => s + (c === 'o' ? 1 : c === 'b' ? 0.5 : 0), 0) / f.r.length;
 const avgMs = f => f.ms.length ? f.ms.reduce((a, b) => a + b, 0) / f.ms.length : null;
 
+// Csillagok egy befejezett tesztért: 1, ha legalább 10 feladatos (a hibák gyakorlása kevesebből is), +1, ha hibátlan;
+// egy kiosztott feladat első teljesítése +2. A felhő ugyanígy számol (star_events a supabase/migrations alatt).
+function sessionStars(s, firstTryOfAssignment) {
+    const base = s.total >= 10 || (s.mode === 'weak' && s.total >= 1) ? 1 + (s.pct === 100 ? 1 : 0) : 0;
+    return base + (s.assignment_id && firstTryOfAssignment ? 2 : 0);
+}
+const STAR_RULES = '1 ⭐ minden legalább 10 feladatos tesztért (a hibák gyakorlásáért kevesebből is), +1 ⭐, ha hibátlan, ' +
+    '+2 ⭐ egy kiosztott feladat első teljesítéséért – és amit a felnőttek ajándékoznak.';
+
 // 0..1 eredményből szín-szint (0 = nem megy … 4 = biztos)
 const levelOf = s => (s >= 0.9 ? 4 : s >= 0.7 ? 3 : s >= 0.5 ? 2 : s >= 0.3 ? 1 : 0);
 const heatLevel = f => levelOf(factScore(f));

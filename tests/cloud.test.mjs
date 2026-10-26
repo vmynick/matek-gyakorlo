@@ -153,7 +153,7 @@ async function playExam(page, table, wrongFirst = 0) {
 }
 
 // Végigválaszolja a futó tesztet (az első wrongFirst feladatot rosszul), aztán vissza a beállításokhoz
-async function answerUntilResults(page, wrongFirst = 0) {
+async function answerUntilResults(page, wrongFirst = 0, restart = true) {
     for (let i = 0; i < 40 && await page.locator('#screen-quiz.active').count(); i++) {
         const q = await page.evaluate(() => {
             const a = +document.getElementById('q-factor1').innerText, b = +document.getElementById('q-factor2').innerText;
@@ -164,7 +164,7 @@ async function answerUntilResults(page, wrongFirst = 0) {
         await page.waitForTimeout(i < wrongFirst ? 1700 : 800);
     }
     await page.locator('#screen-results.active').waitFor({ timeout: 5000 });
-    await page.locator('#screen-results .btn-start').click();
+    if (restart) await page.locator('#screen-results .btn-start').click();
 }
 
 async function main() {
@@ -307,7 +307,7 @@ async function main() {
         // a teszt projekt nem küld levelet: a levélküldést itt "elfogjuk"
         await parent.route('**/auth/v1/otp**', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
         await parent.locator('button:visible', { hasText: 'Vissza a csoportokhoz' }).click();
-        await openSetting(parent, 'Felnőttek (');
+        await openSetting(parent, 'Családtagok (');
         await parent.fill('.invite input[name=email]', 'masik@teszt.matek');
         await parent.locator('.invite .btn').click();
         await parent.locator('.msg.ok', { hasText: 'Meghívó elküldve' }).waitFor({ timeout: 10000 });
@@ -401,6 +401,8 @@ async function main() {
         await mode(parent, 'admin');
         expect((await parent.locator('#console-title').innerText()).includes('Admin'), 'az admin fül címe');
         await parent.fill('#creator-email', 'tanar@teszt.matek');
+        await parent.locator('#creator-family').uncheck(); // csak tanár
+        await parent.locator('#creator-class').check();
         await parent.locator('#admin-card .btn', { hasText: 'Meghívás' }).click();
         await parent.locator('#creator-msg.ok').waitFor({ timeout: 10000 });
         await mode(parent, 'family');
@@ -410,7 +412,10 @@ async function main() {
         await teacher.goto((await magicLink('tanar@teszt.matek')).action_link);
         await teacher.locator('#view-home').waitFor({ state: 'visible', timeout: 20000 });
         const teacherRoles = await teacher.locator('#who-roles').innerText();
-        expect(teacherRoles.includes('Tanár') && !teacherRoles.includes('Admin'), `a tanár jogosultságai a fejlécben: ${teacherRoles}`);
+        expect(teacherRoles.includes('Tanár') && !teacherRoles.includes('Admin') && !teacherRoles.includes('Szülő'),
+            `a tanár jogosultságai a fejlécben: ${teacherRoles} (csak Tanár kell)`);
+        const teacherFamily = await rpc('create_group', await adultToken(teacher), { p_name: 'Kamu család', p_kind: 'family' });
+        expect(!teacherFamily.ok, 'a csak tanárként meghívott családot hozhatott létre');
         await mode(teacher, 'class');
         expect((await teacher.locator('#console-title').innerText()).includes('Tanári felület'), 'a tanár fül címe');
         await teacher.fill('#group-name', '3.b');
@@ -545,6 +550,90 @@ async function main() {
         await teacher.context().close();
     });
 
+    await test('Csillagok: cél, ajándék, egyéni feladat a gyerek tabletjén, beváltás, csillag mindenkinek', async (expect) => {
+        await mode(parent, 'family');
+        const peti = await childId('Peti');
+        const stars = async (id) => +(await sql('test', `select coalesce(sum(stars), 0) as n from public.star_events('${id}')`))[0].n;
+        const before = await stars(peti);
+        // eddig: 5-ös tábla hibátlanul (1 + 1) és az osztály 6-os feladata (+2; az osztály törlése után is megmarad)
+        expect(before === 4, `Peti csillagai a teszt elején: ${before} (4 kell)`);
+
+        // A szülő célt tűz ki, csillagot ad, és csak Petinek oszt ki egy feladatot
+        await parent.locator('.child-btn', { hasText: 'Peti' }).first().click();
+        await parent.locator('#view-child').waitFor({ state: 'visible' });
+        await openSetting(parent, 'Új cél kitűzése');
+        await parent.locator('#goal-emojis button', { hasText: '🍦' }).click();
+        await parent.fill('#goal-title', 'Fagyi');
+        await parent.fill('#goal-target', '3');
+        await parent.locator('#goal-box .btn').click();
+        await parent.locator('#child-goals', { hasText: 'Fagyi' }).waitFor({ timeout: 10000 });
+        await openSetting(parent, 'Csillag ajándékozása');
+        await parent.locator('#grant-amount').selectOption('2');
+        await parent.fill('#grant-note', 'Ügyes vagy!');
+        await parent.locator('#grant-box .btn').click();
+        await parent.locator('#child-stars-total', { hasText: String(before + 2) }).waitFor({ timeout: 10000 });
+        await openSetting(parent, 'Új feladat kiosztása');
+        await parent.locator('#assign-tables button', { hasText: '4-es' }).click();
+        await parent.fill('#assign-count', '5');
+        await parent.locator('.assign-form .btn').click();
+        await parent.locator('#child-assignments', { hasText: 'csak neki' }).waitFor({ timeout: 10000 });
+        const own = await sql('test', `select count(*) as n from public.assignments where child_id = '${peti}'`);
+        expect(+own[0].n === 1, `Petinek szóló feladat: ${own[0].n}`);
+
+        // A tableten: ajándék-értesítés, a cél és a feladat; a feladat után a cél is teljesül
+        await kid.reload();
+        await kid.locator('#star-overlay').waitFor({ state: 'visible', timeout: 20000 });
+        const gift = await kid.locator('#star-overlay').innerText();
+        expect(gift.includes('+2') && gift.includes('Ügyes vagy'), `ajándék értesítés: ${gift}`);
+        await kid.locator('#star-overlay .btn-start').click();
+        expect((await kid.locator('#stars-box').innerText()).includes('Fagyi'), 'a cél nem látszik a tableten');
+        await kid.locator('.assignment-card', { hasText: '4-es' }).locator('button').click();
+        await answerUntilResults(kid, 0, false);
+        const earned = await kid.locator('#res-stars').innerText();
+        expect(earned.includes('+2'), `csillag az eredménynél: ${earned} (+2 kell: 5 feladat, de kiosztott)`);
+        await kid.locator('#star-overlay', { hasText: 'Fagyi' }).waitFor({ state: 'visible', timeout: 10000 });
+        await shot(kid, '7-cel-teljesult');
+        await kid.locator('#star-overlay .btn-start').click();
+        await kid.locator('#screen-results .btn-start').click();
+        await kid.waitForFunction(() => !JSON.parse(localStorage.getItem('szorzo_outbox') || '{"sessions":[1]}').sessions.length,
+            null, { timeout: 20000 });
+        const after = await stars(peti);
+        expect(after === before + 4, `Peti csillagai: ${after} (${before + 4} kell: +2 ajándék, +2 feladat)`);
+        await kid.locator('#stars-box', { hasText: String(after) }).waitFor({ timeout: 10000 });
+
+        // A szülő beváltja a célt; a csoportnak is ad csillagot
+        await parent.locator('button:visible', { hasText: 'Vissza a csoportokhoz' }).click();
+        await parent.locator('.child-btn', { hasText: 'Peti' }).first().click();
+        await parent.locator('#view-child').waitFor({ state: 'visible' });
+        await parent.locator('#child-goals [data-redeem]').click();
+        await parent.locator('#child-goals', { hasText: 'beváltva' }).waitFor({ timeout: 10000 });
+        const redeemed = await sql('test', `select count(*) as n from public.star_goals where redeemed_at is not null`);
+        expect(+redeemed[0].n === 1, 'a cél nincs beváltva');
+        const progress = await rpc('assignment_progress', await adultToken(parent), { p_group_id: await familyId() });
+        const ownId = (await sql('test', `select id from public.assignments where child_id = '${peti}'`))[0].id;
+        const ownRows = (progress.data || []).filter((r) => r.assignment_id === ownId);
+        expect(ownRows.length === 1 && ownRows[0].nickname === 'Peti' && ownRows[0].done === 1,
+            `a Petinek szóló feladat haladása: ${JSON.stringify(ownRows)} (csak Peti, 1× kész)`);
+        await parent.locator('button:visible', { hasText: 'Vissza a csoportokhoz' }).click();
+        await parent.locator('.card', { has: parent.locator('h2', { hasText: 'Teszt család' }) }).locator('[data-act="overview"]').click();
+        await parent.locator('#view-group').waitFor({ state: 'visible', timeout: 10000 });
+        await openSetting(parent, 'Csillag mindenkinek');
+        await parent.locator('#group-grant-box .btn').click();
+        await parent.locator('#group-children', { hasText: `⭐ ${after + 3}` }).waitFor({ timeout: 10000 });
+        const groupGrants = await sql('test', `select count(*) as n from public.star_grants where amount = 3`);
+        expect(+groupGrants[0].n === 2, `csillag mindenkinek: ${groupGrants[0].n} sor (Bori és Peti)`);
+
+        // Idegen nem adhat csillagot, a tablet sem írhat bele
+        const stranger = await tokenFor('idegen@teszt.matek');
+        const strangerGrant = await rpc('grant_stars', stranger, { p_child_id: peti, p_amount: 50, p_note: 'kamu' });
+        expect(!strangerGrant.ok, 'idegen csillagot adott');
+        const kidToken = await kid.evaluate(() => JSON.parse(localStorage.getItem('szorzo-eszkoz-auth')).access_token);
+        const kidGrant = await rest('POST', 'star_grants', kidToken, [{ child_id: peti, amount: 50 }]);
+        expect(!kidGrant.ok, 'a tablet maga írt csillagot');
+        await shot(parent, '8-csoport-csillag');
+        expect(!kid.errors.length && !parent.errors.length, `JS hiba: ${[...kid.errors, ...parent.errors].join(' | ')}`);
+    });
+
     await test('Szerkesztés: gyerek átnevezése, szerep, utolsó tulajdonos, csoport törlése, saját fiók törlése', async (expect) => {
         await mode(parent, 'family');
         // Gyerek átnevezése és avatar csere
@@ -561,7 +650,7 @@ async function main() {
         // A meghívott felnőtt tulajdonos lesz a családban
         await parent.locator('button:visible', { hasText: 'Vissza a csoportokhoz' }).click();
         const family = parent.locator('.card', { has: parent.locator('h2', { hasText: 'Teszt család' }) });
-        await openSetting(family, 'Felnőttek');
+        await openSetting(family, 'Családtagok');
         await family.locator('li', { hasText: 'masik@teszt.matek' }).locator('.role-select').selectOption('owner');
         await parent.waitForTimeout(1500);
         const role = await sql('test', `select m.role from public.group_members m join public.adults a on a.id = m.adult_id where a.email = 'masik@teszt.matek'`);

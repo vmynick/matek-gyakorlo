@@ -147,18 +147,21 @@ async function loadHome() {
     show('view-home');
 }
 
-// Jogosultságok (a fejlécben és a Fiók fülön): admin; szülő, ha családot hozhat létre vagy egy család tagja;
-// tanár, ha osztályt hozhat létre vagy egy osztály tagja
+// Szerepek (a fejlécben és a Fiók fülön). Szülő: családot hozhat létre, vagy egy család tagja (pl. a másik szülő).
+// Tanár: osztályt hozhat létre, vagy egy osztály tanára. Admin: szülőket és tanárokat hív meg.
+const isParent = () => me.can_create_groups || groups.some(g => g.kind === 'family');
+const isTeacher = () => me.can_create_classes || groups.some(g => g.kind === 'class');
+
 function myRoles() {
     const roles = [];
-    const canFamily = me.can_create_groups || me.is_admin;
-    const canClass = me.can_create_classes || me.is_admin;
-    if (me.is_admin) roles.push({ label: '🛡️ Admin', what: 'felnőtteket hívhat meg, jogokat adhat és vonhat meg' });
-    if (canFamily || groups.some(g => g.kind === 'family')) {
-        roles.push({ label: '🏠 Szülő', what: canFamily ? 'családot hozhat létre, gyerekeket vehet fel' : 'egy család tagja' });
+    if (me.is_admin) roles.push({ label: '🛡️ Admin', what: 'szülőket és tanárokat hívhat meg, jogokat adhat és vonhat meg' });
+    if (isParent()) {
+        roles.push({ label: '🏠 Szülő', what: me.can_create_groups ? 'családot hozhat létre, gyerekeket vehet fel'
+            : 'egy család tagja: látja a család gyerekeit' });
     }
-    if (canClass || groups.some(g => g.kind === 'class')) {
-        roles.push({ label: '🏫 Tanár', what: canClass ? 'osztályt hozhat létre, feladatokat oszthat ki' : 'egy osztály tagja' });
+    if (isTeacher()) {
+        roles.push({ label: '🏫 Tanár', what: me.can_create_classes ? 'osztályt hozhat létre, szülőket hívhat meg'
+            : 'egy osztály tanára: látja az osztály gyerekeit' });
     }
     return roles;
 }
@@ -174,13 +177,9 @@ const MODE_TITLES = { family: '👨‍👩‍👧 Szülői felület', class: '�
 let consoleMode = null;
 
 function availableModes() {
-    const canFamily = me.can_create_groups || me.is_admin;
-    const canClass = me.can_create_classes || me.is_admin;
-    const hasFamily = groups.some(g => g.kind === 'family');
-    const hasClass = groups.some(g => g.kind === 'class');
     const modes = [];
-    if (hasFamily || canFamily || (!hasClass && !canClass)) modes.push('family');
-    if (hasClass || canClass) modes.push('class');
+    if (isParent() || (!isTeacher() && !me.is_admin)) modes.push('family');
+    if (isTeacher()) modes.push('class');
     if (me.is_admin) modes.push('admin');
     modes.push('account');
     return modes;
@@ -216,8 +215,7 @@ function renderHome() {
     if (mode === 'account') renderAccount();
 
     // Új csoport: a szülő családot, a tanár osztályt hoz létre (külön jog); amíg nincs egy sem, nyitva van
-    const canNew = mode === 'family' ? (me.can_create_groups || me.is_admin)
-        : mode === 'class' ? (me.can_create_classes || me.is_admin) : false;
+    const canNew = mode === 'family' ? me.can_create_groups : mode === 'class' ? me.can_create_classes : false;
     document.getElementById('new-group-card').hidden = !canNew;
     document.getElementById('new-group-box').open = canNew && !groups.some(g => g.kind === mode);
     document.getElementById('group-kind').value = mode === 'class' ? 'class' : 'family';
@@ -271,7 +269,7 @@ function renderFamilyHome() {
             if (!meta) continue;
             const { data: tasks } = await sb.rpc('child_assignments', { p_child_id: s.child_id });
             const open = (tasks || []).filter(t => !t.done && (!t.due_date || new Date(`${t.due_date}T23:59:59`) > new Date())).length;
-            meta.innerText = `az elmúlt 7 napban ${s.answers_7d} feladat` +
+            meta.innerText = `⭐ ${s.stars ?? 0} · az elmúlt 7 napban ${s.answers_7d} feladat` +
                 (s.weak ? ` · 🎯 ${s.weak} gyakorlásra vár` : '') +
                 (open ? ` · 📌 ${open} kiosztott feladat` : '') +
                 ` · ${s.last_answer ? `utoljára ${whenText(s.last_answer)}` : 'még nem gyakorolt'}`;
@@ -284,7 +282,7 @@ function renderClassHome() {
     const classes = groups.filter(g => g.kind === 'class');
     const wrap = document.getElementById('class-groups');
     wrap.innerHTML = classes.length ? '' : `<section class="card"><h2>👋 Üdv!</h2><p class="muted">${
-        (me.can_create_classes || me.is_admin) ? 'Hozz létre lent egy osztályt. Utána a szülőknek csatlakozási kódot adhatsz.'
+        me.can_create_classes ? 'Hozz létre lent egy osztályt. Utána a szülőknek csatlakozási kódot adhatsz.'
             : 'Még nem vagy egy osztálynak sem a tagja.'}</p></section>`;
     classes.forEach(g => wrap.appendChild(groupCard(g, 'class')));
     classes.forEach(async g => {
@@ -344,15 +342,18 @@ function groupCard(g, view) {
         </form>
         <div class="avatars">${AVATARS.map((a, i) => `<button type="button" data-avatar="${a}" class="${i ? '' : 'selected'}">${a}</button>`).join('')}</div>
         <p class="muted">Csak becenevet adj meg, valódi nevet ne.</p>`, 'add-child-box'));
-    settings.push(settingItem('👥', `Felnőttek (${g.group_members.length})`,
-        `${owners} tulajdonos, ${g.group_members.length - owners} tag · mind látja a ${isClass ? 'osztály' : 'család'} gyerekeit`, `
+    settings.push(settingItem(isClass ? '🧑‍🏫' : '👪', `${isClass ? 'Tanárok' : 'Családtagok'} (${g.group_members.length})`,
+        isClass ? 'az osztály tanárai: mind látják az osztály gyerekeit'
+            : 'szülők, nagyszülők: mind látják a család gyerekeit', `
+        <p class="muted">${isClass ? 'Tanártársat hívhatsz meg (pl. napközis tanító). A szülőket a „Szülő meghívása” résznél hívd meg: ők a saját családjukban vannak, nem itt.'
+            : 'Pl. a másik szülőt vagy a nagyszülőket hívhatod meg.'} A tulajdonos meghívhat és törölhet is.</p>
         <ul class="members">${g.group_members.map(m => memberRow(m, isOwner)).join('')}</ul>
         ${isOwner ? `
         <form class="invite">
-            <input type="email" name="email" required placeholder="szulo@pelda.hu">
+            <input type="email" name="email" required placeholder="${isClass ? 'tanar@iskola.hu' : 'masik.szulo@pelda.hu'}">
             <select name="role">
-                <option value="member">tag: látja a csoport gyerekeit</option>
-                <option value="owner">tulajdonos: meghívhat is</option>
+                <option value="member">tag: látja a gyerekeket</option>
+                <option value="owner">tulajdonos: meghívhat és törölhet is</option>
             </select>
             <button class="btn">Meghívás</button>
         </form>
@@ -559,20 +560,38 @@ async function sendInviteMail(email, msgEl) {
     loadPending();
 }
 
-function inviteCreator(event) {
+// Az admin szerepet választva hív meg: szülő (család) és / vagy tanár (osztály)
+async function inviteCreator(event) {
     event.preventDefault();
-    inviteAdult(document.getElementById('creator-email').value, null, 'member', true, document.getElementById('creator-msg'));
+    const msgEl = document.getElementById('creator-msg');
+    const email = document.getElementById('creator-email').value.trim().toLowerCase();
+    const families = document.getElementById('creator-family').checked;
+    const classes = document.getElementById('creator-class').checked;
+    if (!families && !classes) return setMsg(msgEl, 'error', 'Válaszd ki, szülőként vagy tanárként hívod-e meg.');
+    setMsg(msgEl, '', 'Meghívás…');
+    const { data: result, error } = await sb.rpc('admin_invite', { p_email: email, p_families: families, p_classes: classes });
+    if (error) return setMsg(msgEl, 'error', error.message);
+    if (result === 'added') {
+        setMsg(msgEl, 'ok', `${email} már regisztrált: megkapta a szerepet.`);
+        return loadAdmin();
+    }
+    await sendInviteMail(email, msgEl);
 }
+
+const rightsText = (families, classes) =>
+    [families && '🏠 Szülő', classes && '🏫 Tanár'].filter(Boolean).join(' · ');
 
 async function loadPending() {
     const { data, error } = await sb.from('invitations')
-        .select('id, email, created_at, groups ( name )').is('accepted_at', null).order('created_at', { ascending: false });
+        .select('id, email, created_at, can_create_groups, can_create_classes, groups ( name )')
+        .is('accepted_at', null).order('created_at', { ascending: false });
     if (error) return fail(error);
     document.getElementById('pending-sub').innerText = data.length
         ? `${data.length} még nem lépett be` : 'nincs függő meghívó';
     const list = document.getElementById('pending-list');
     list.innerHTML = data.map(inv => `
-        <li><span>${esc(inv.email)} <span class="muted">${inv.groups ? '→ ' + esc(inv.groups.name) : '(saját csoporttal)'} · ${esc(whenText(inv.created_at))}</span></span>
+        <li><span>${esc(inv.email)} <span class="muted">${inv.groups ? '→ ' + esc(inv.groups.name)
+            : esc(rightsText(inv.can_create_groups, inv.can_create_classes))} · ${esc(whenText(inv.created_at))}</span></span>
             <button class="link" data-id="${inv.id}">visszavonás</button></li>`).join('')
         || '<li class="muted">Minden meghívott belépett már.</li>';
     list.querySelectorAll('button').forEach(btn => {
@@ -604,11 +623,12 @@ async function openChild(id) {
     document.getElementById('delete-child-btn').hidden = !currentChild.owner;
     document.getElementById('code-box').hidden = true;
     try {
-        await Promise.all([loadChildStats(), loadDevices(), loadChildGroups(), loadChildAssignments()]);
+        await Promise.all([loadChildStats(), loadDevices(), loadChildGroups(), loadChildAssignments(), loadChildStars()]);
     } catch (e) {
         return fail(e);
     }
     applyChildRights();
+    placeAssignForm('child');
     show('view-child');
     renderChildStats(); // a grafikonnak látható vászon kell
 }
@@ -631,15 +651,123 @@ const groupLabel = g => `${g.kind === 'class' ? '🏫' : '🏠'} ${g.name || 'eg
 async function loadChildAssignments() {
     const { data, error } = await sb.rpc('child_assignments', { p_child_id: currentChild.id });
     if (error) throw error;
-    document.getElementById('child-assignments-card').hidden = !data.length;
-    document.getElementById('child-assignments').innerHTML = data.map(a => {
+    const list = document.getElementById('child-assignments');
+    list.innerHTML = data.map(a => {
         const overdue = a.due_date && new Date(`${a.due_date}T23:59:59`) < new Date();
         const due = a.due_date ? ` · határidő: ${new Date(`${a.due_date}T12:00:00`).toLocaleDateString('hu-HU', { month: 'short', day: 'numeric' })}` : '';
         const where = a.group_name ? `${a.group_kind === 'class' ? '🏫' : '🏠'} ${esc(a.group_name)}` : '🏠 család';
         const status = a.done ? `✅ kész (${a.last_pct}%)` : overdue ? '⚠️ lejárt' : '⏳ még nincs kész';
-        return `<li><span>📌 ${esc(assignmentLabel(a))}<br><span class="muted">${where}${esc(due)}${a.note ? ` · 💬 ${esc(a.note)}` : ''}</span></span>
-            <span>${status}</span></li>`;
-    }).join('');
+        return `<li><span>📌 ${esc(assignmentLabel(a))}<br><span class="muted">${a.for_child ? '👤 csak neki · ' : ''}${where}${esc(due)}${a.note ? ` · 💬 ${esc(a.note)}` : ''}</span></span>
+            <span>${status}${a.can_delete ? `<br><button class="link danger-link" data-del-assignment="${a.id}">törlés</button>` : ''}</span></li>`;
+    }).join('') || '<li class="muted">Még nincs kiosztott feladat.</li>';
+    list.querySelectorAll('[data-del-assignment]').forEach(btn => {
+        btn.onclick = async () => {
+            if (!confirm('Törlöd ezt a feladatot? Az eddigi eredmények és csillagok megmaradnak.')) return;
+            const { error: delError } = await sb.from('assignments').delete().eq('id', btn.dataset.delAssignment);
+            if (delError) return fail(delError);
+            loadChildAssignments().catch(fail);
+        };
+    });
+}
+
+/* ---------- Csillagok és célok (a szülő és a tanár is ad csillagot, tűz ki célt) ---------- */
+
+const GOAL_EMOJIS = ['🎁', '🍦', '🎬', '🎮', '⚽', '🧸', '📚', '🍕', '🏊', '🎨', '🎢', '🐶'];
+let goalEmoji = GOAL_EMOJIS[0];
+const starFromText = from => (from ? `${from.kind === 'class' ? '🏫' : '🏠'} ${from.name || (from.kind === 'class' ? 'osztály' : 'egy másik család')}` : '');
+
+async function loadChildStars() {
+    const { data, error } = await sb.rpc('child_stars', { p_child_id: currentChild.id });
+    if (error) throw error;
+    document.getElementById('child-stars-total').innerText = data.total;
+    document.getElementById('child-stars-sub').innerText = `csillaga van (gyakorlásért ${data.total - data.granted}, ajándék ${data.granted})`;
+    document.getElementById('star-rules').innerText = STAR_RULES;
+
+    const goals = document.getElementById('child-goals');
+    goals.innerHTML = data.goals.map(g => {
+        const reached = g.progress >= g.target;
+        const status = g.redeemed_at ? `✅ beváltva ${esc(whenText(g.redeemed_at))}` : reached ? '🎉 elérte!' : `${g.progress} / ${g.target} ⭐`;
+        return `<div class="goal-item${g.redeemed_at ? ' redeemed' : ''}">
+            <div class="goal-head"><span>${esc(g.emoji)} ${esc(g.title)}</span><span>${status}</span></div>
+            ${g.redeemed_at ? '' : `<div class="goal-bar"><i style="width:${Math.round(100 * g.progress / g.target)}%"></i></div>`}
+            <div class="row"><span class="muted">${esc(starFromText(g.from))} · kitűzve ${esc(whenText(g.created_at))}</span>
+                ${g.can_manage && !g.redeemed_at && reached ? `<button class="btn" data-redeem="${g.id}">✅ Beváltva</button>` : ''}
+                ${g.can_manage ? `<button class="link danger-link" data-del-goal="${g.id}">törlés</button>` : ''}</div>
+        </div>`;
+    }).join('') || '<p class="muted">Még nincs cél. Tűzz ki egyet: a gyerek az appban látja, mennyi csillag hiányzik még.</p>';
+    goals.querySelectorAll('[data-redeem]').forEach(btn => {
+        btn.onclick = async () => {
+            const { error: redeemError } = await sb.rpc('redeem_star_goal', { p_goal_id: btn.dataset.redeem });
+            if (redeemError) return fail(redeemError);
+            toast('✅ Beváltva – szép munka volt!');
+            loadChildStars().catch(fail);
+        };
+    });
+    goals.querySelectorAll('[data-del-goal]').forEach(btn => {
+        btn.onclick = async () => {
+            if (!confirm('Törlöd ezt a célt? A csillagok megmaradnak.')) return;
+            const { error: delError } = await sb.from('star_goals').delete().eq('id', btn.dataset.delGoal);
+            if (delError) return fail(delError);
+            loadChildStars().catch(fail);
+        };
+    });
+
+    document.getElementById('grants-sub').innerText = data.grants.length
+        ? `legutóbb: +${data.grants[0].amount} ⭐ ${whenText(data.grants[0].created_at)}` : 'még nem kapott';
+    const grants = document.getElementById('grant-list');
+    grants.innerHTML = data.grants.map(g => `
+        <li><span>+${g.amount} ⭐ ${g.note ? `· 💬 ${esc(g.note)}` : ''}<br><span class="muted">${esc(starFromText(g.from))} · ${esc(whenText(g.created_at))}</span></span>
+            ${g.can_delete ? `<button class="link" data-del-grant="${g.id}">visszavonás</button>` : ''}</li>`).join('')
+        || '<li class="muted">Még nem kapott ajándék csillagot.</li>';
+    grants.querySelectorAll('[data-del-grant]').forEach(btn => {
+        btn.onclick = async () => {
+            const { error: delError } = await sb.from('star_grants').delete().eq('id', btn.dataset.delGrant);
+            if (delError) return fail(delError);
+            loadChildStars().catch(fail);
+        };
+    });
+
+    const picks = document.getElementById('goal-emojis');
+    picks.innerHTML = GOAL_EMOJIS.map(e => `<button type="button" data-emoji="${e}" class="${e === goalEmoji ? 'selected' : ''}">${e}</button>`).join('');
+    picks.querySelectorAll('button').forEach(btn => {
+        btn.onclick = () => {
+            goalEmoji = btn.dataset.emoji;
+            picks.querySelectorAll('button').forEach(b => b.classList.toggle('selected', b === btn));
+        };
+    });
+}
+
+async function createGoal(event) {
+    event.preventDefault();
+    const title = document.getElementById('goal-title').value.trim();
+    const target = Math.max(1, Math.min(1000, +document.getElementById('goal-target').value || 30));
+    const { error } = await sb.rpc('create_star_goal', { p_child_id: currentChild.id, p_title: title, p_emoji: goalEmoji, p_target: target });
+    if (error) return fail(error);
+    document.getElementById('goal-title').value = '';
+    toast(`🎯 Cél kitűzve: ${goalEmoji} ${title} – ${target} ⭐`);
+    loadChildStars().catch(fail);
+}
+
+async function grantStars(event) {
+    event.preventDefault();
+    const amount = +document.getElementById('grant-amount').value;
+    const { error } = await sb.rpc('grant_stars',
+        { p_child_id: currentChild.id, p_amount: amount, p_note: document.getElementById('grant-note').value });
+    if (error) return fail(error);
+    document.getElementById('grant-note').value = '';
+    toast(`🎁 ${currentChild.nickname} kapott ${amount} ⭐-ot`);
+    loadChildStars().catch(fail);
+}
+
+async function grantGroupStars(event) {
+    event.preventDefault();
+    const amount = +document.getElementById('group-grant-amount').value;
+    const { data, error } = await sb.rpc('grant_stars_group',
+        { p_group_id: currentGroup.id, p_amount: amount, p_note: document.getElementById('group-grant-note').value });
+    if (error) return fail(error);
+    document.getElementById('group-grant-note').value = '';
+    toast(`🎁 ${data} gyerek kapott ${amount} ⭐-ot`);
+    loadGroupChildren().catch(fail);
 }
 
 /* ---------- A gyerek neve, avatarja ---------- */
@@ -751,15 +879,15 @@ async function loadAdmin() {
     list.innerHTML = data.map(a => {
         const self = a.id === me.id;
         const groupsText = a.groups.map(g => `${g.kind === 'class' ? '🏫' : '🏠'} ${esc(g.name)}${g.role === 'owner' ? ' (tulajdonos)' : ''}`).join(', ') || 'nincs csoportja';
-        const rights = [a.can_create_groups && 'család', a.can_create_classes && 'osztály'].filter(Boolean).join(' + ');
+        const roles = [a.is_admin && '🛡️ Admin', rightsText(a.can_create_groups, a.can_create_classes)].filter(Boolean).join(' · ');
         return settingItem(a.is_admin ? '🛡️' : '👤', `${esc(a.email)}${self ? ' (te)' : ''}`,
-            `${rights ? `létrehozhat: ${rights}` : 'csak meghívott tag'} · belépett: ${esc(whenText(a.last_sign_in_at))}`, `
+            `${roles || 'meghívott családtag / tanártárs'} · belépett: ${esc(whenText(a.last_sign_in_at))}`, `
             <p class="muted">Csoportjai: ${groupsText}</p>
-            <label class="toggle-row"><input type="checkbox" data-rights="${a.id}" data-kind="family" ${a.can_create_groups ? 'checked' : ''} ${self ? 'disabled' : ''}>
-                🏠 Családot hozhat létre (szülő)</label>
-            <label class="toggle-row"><input type="checkbox" data-rights="${a.id}" data-kind="class" ${a.can_create_classes ? 'checked' : ''} ${self ? 'disabled' : ''}>
-                🏫 Osztályt hozhat létre (tanár)</label>
-            ${self ? '<p class="muted">A saját jogaidat itt nem módosíthatod.</p>' : `
+            <label class="toggle-row"><input type="checkbox" data-rights="${a.id}" data-kind="family" ${a.can_create_groups ? 'checked' : ''}>
+                🏠 Szülő – családot hozhat létre</label>
+            <label class="toggle-row"><input type="checkbox" data-rights="${a.id}" data-kind="class" ${a.can_create_classes ? 'checked' : ''}>
+                🏫 Tanár – osztályt hozhat létre</label>
+            ${self ? '' : `
             <p class="muted">A hozzáférés megvonása törli a fiókot; ahol egyedül volt, a csoportját és a csak abban lévő gyerekeket is.</p>
             <div class="row"><button class="btn danger" data-revoke="${a.id}" data-email="${esc(a.email)}">🚫 Hozzáférés megvonása</button></div>`}`);
     }).join('');
@@ -770,6 +898,7 @@ async function loadAdmin() {
             const { error: setError } = await sb.rpc('admin_set_rights', { p_adult: id, p_families: value('family'), p_classes: value('class') });
             if (setError) return fail(setError);
             toast('✅ Mentve');
+            if (id === me.id) loadHome(); // a saját szerepem: a fülek és a fejléc is változik
         };
     });
     list.querySelectorAll('[data-revoke]').forEach(btn => {
@@ -912,7 +1041,7 @@ async function removeChildPin() {
 }
 
 async function clearChildStats() {
-    if (!confirm(`Biztosan törlöd ${currentChild.nickname} összes eredményét? Ez nem vonható vissza.`)) return;
+    if (!confirm(`Biztosan törlöd ${currentChild.nickname} összes eredményét (a gyakorlásért kapott csillagokat is)? Ez nem vonható vissza.`)) return;
     const { error } = await sb.rpc('clear_child_stats', { p_child_id: currentChild.id });
     if (error) return fail(error);
     toast('🗑️ Statisztika törölve');
@@ -943,6 +1072,7 @@ async function openGroup(id) {
     document.getElementById('group-icon').innerText = g.kind === 'class' ? '🏫' : '🏠';
     document.getElementById('group-title').innerText = g.name;
     renderAssignTables();
+    placeAssignForm('group');
     try {
         await Promise.all([loadGroupFacts(), loadGroupChildren(), loadAssignments()]);
     } catch (e) {
@@ -975,9 +1105,21 @@ async function loadGroupChildren() {
             <span><strong>${esc(c.avatar)} ${esc(c.nickname)}</strong><br>
                 <span class="muted">az elmúlt 7 napban ${c.answers_7d} feladat · összesen ${c.answers_total} ·
                     utoljára ${esc(c.last_answer ? whenText(c.last_answer) : 'még nem gyakorolt')}</span></span>
-            <span>${c.weak ? `🎯 ${c.weak} gyakorlásra vár` : (c.answers_total ? '🎉 nincs hibás' : '')}</span>
+            <span>⭐ ${c.stars ?? 0}<br>${c.weak ? `🎯 ${c.weak} gyakorlásra vár` : (c.answers_total ? '🎉 nincs hibás' : '')}</span>
         </li>`).join('') || '<li class="muted">Még nincs gyerek a csoportban.</li>';
     list.querySelectorAll('[data-child]').forEach(li => { li.onclick = () => openChild(li.dataset.child); });
+}
+
+// Az egyetlen feladat-űrlap oda kerül, ahol éppen kiosztanak: a csoport nézetbe vagy a gyerek oldalára
+let assignTarget = null; // { groupId } vagy { childId }
+function placeAssignForm(where) {
+    const box = document.getElementById('assign-box');
+    box.open = false;
+    document.getElementById(where === 'child' ? 'child-assign-slot' : 'group-assign-slot').appendChild(box);
+    assignTarget = where === 'child' ? { childId: currentChild.id } : { groupId: currentGroup.id };
+    document.getElementById('assign-sub').innerText = where === 'child'
+        ? `csak ${currentChild.nickname} kapja meg` : 'a csoport minden gyereke megkapja';
+    renderAssignTables();
 }
 
 function renderAssignTables() {
@@ -999,7 +1141,8 @@ async function createAssignment(event) {
     if (!tables.length) return toast('Válassz legalább egy táblát!');
     const mode = document.getElementById('assign-mode').value;
     const { error } = await sb.rpc('create_assignment', {
-        p_group_id: currentGroup.id,
+        p_group_id: assignTarget.groupId || null,
+        p_child_id: assignTarget.childId || null,
         p_op: document.getElementById('assign-op').value,
         p_tables: tables,
         p_mode: mode,
@@ -1008,15 +1151,15 @@ async function createAssignment(event) {
         p_note: document.getElementById('assign-note').value,
     });
     if (error) return fail(error);
-    toast('📌 Feladat kiosztva');
+    toast(assignTarget.childId ? `📌 Feladat kiosztva ${currentChild.nickname} számára` : '📌 Feladat kiosztva');
     document.getElementById('assign-note').value = '';
     renderAssignTables();
-    loadAssignments().catch(fail);
+    (assignTarget.childId ? loadChildAssignments() : loadAssignments()).catch(fail);
 }
 
 async function loadAssignments() {
     const [tasksRes, progressRes] = await Promise.all([
-        sb.from('assignments').select('id, op, tables, mode, question_count, due_date, note, created_by, created_at')
+        sb.from('assignments').select('id, child_id, op, tables, mode, question_count, due_date, note, created_by, created_at')
             .eq('group_id', currentGroup.id).order('created_at', { ascending: false }),
         sb.rpc('assignment_progress', { p_group_id: currentGroup.id }),
     ]);
@@ -1034,7 +1177,7 @@ async function loadAssignments() {
         const canDelete = a.created_by === me.id || currentGroup.isOwner;
         return `
         <div class="assignment">
-            <div><strong>📌 ${esc(assignmentLabel(a))}</strong>
+            <div><strong>📌 ${esc(assignmentLabel(a))}</strong>${a.child_id && rows[0] ? ` <span class="badge">👤 csak ${esc(rows[0].nickname)}</span>` : ''}
                 <span class="muted">${a.due_date ? ` · határidő: ${esc(new Date(`${a.due_date}T12:00:00`).toLocaleDateString('hu-HU', { month: 'short', day: 'numeric', weekday: 'short' }))}${overdue ? ' (lejárt)' : ''}` : ''}
                 · kész: ${done}/${rows.length}</span></div>
             ${a.note ? `<div class="muted">💬 ${esc(a.note)}</div>` : ''}

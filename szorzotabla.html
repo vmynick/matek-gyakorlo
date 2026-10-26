@@ -803,6 +803,78 @@
             display: none;
         }
 
+        /* Csillagok és célok (összekötött eszközön; a célt a szülő / tanár tűzi ki) */
+        .stars-box {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 18px;
+            padding: 12px 14px;
+            border: 2px solid var(--star-border);
+            border-radius: 14px;
+            background: var(--star-bg);
+            color: var(--text-dark);
+            font-size: 0.9rem;
+        }
+
+        .stars-box[hidden] {
+            display: none;
+        }
+
+        .stars-total {
+            font-size: 1.05rem;
+        }
+
+        .stars-total strong {
+            font-size: 1.3rem;
+        }
+
+        .goal {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .goal-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            font-weight: 800;
+        }
+
+        .goal small,
+        .stars-box > small {
+            color: var(--text-muted);
+        }
+
+        .goal.reached small {
+            color: var(--warn-text);
+            font-weight: 700;
+        }
+
+        .res-stars {
+            margin: -6px 0 14px;
+            text-align: center;
+            font-size: 1.15rem;
+            font-weight: 800;
+            color: var(--warn-text);
+        }
+
+        .res-stars.hint {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+
+        .res-stars[hidden] {
+            display: none;
+        }
+
+        .star-big {
+            font-size: 3.5rem;
+            line-height: 1.2;
+        }
+
         /* Felhő ablak (a PIN ablak stílusára) */
         .cloud-box {
             display: flex;
@@ -977,6 +1049,8 @@
         <h1>✨ Szorzótábla Mester</h1>
         <!-- Összekötött eszközön: kié az eszköz (koppintásra a felhő ablak) -->
         <button class="child-chip" id="child-chip" hidden onclick="onChildChipClick()"></button>
+        <!-- Csillagok és célok (összekötött eszközön) -->
+        <div class="stars-box" id="stars-box" hidden></div>
         <!-- Kiosztott feladatok (összekötött eszközön, a szülőtől / tanártól) -->
         <div class="assignments" id="assignments" hidden></div>
 
@@ -1087,6 +1161,7 @@
     <!-- 3. EREDMÉNY KÉPERNYŐ -->
     <div id="screen-results" class="screen">
         <h1 id="res-title">🎉 Szép munka!</h1>
+        <p class="res-stars" id="res-stars" hidden></p>
 
         <div class="results-summary">
             <div class="score-circle">
@@ -1205,6 +1280,16 @@
         </div>
         <p class="cloud-adult"><a href="szulo.html">👨‍👩‍👧 Szülő vagy tanár vagy? Szülői felület ➔</a></p>
         <button class="link-btn" onclick="closeCloudPanel()">Bezárás</button>
+    </div>
+</div>
+
+<!-- Csillag-hír: ajándék csillag a felnőttől vagy elért cél -->
+<div class="pin-overlay" id="star-overlay" hidden>
+    <div class="pin-box" role="dialog" aria-modal="true" aria-labelledby="star-title">
+        <div class="star-big" id="star-emoji">🎁</div>
+        <h3 id="star-title"></h3>
+        <p class="pin-msg" id="star-msg"></p>
+        <button class="btn-start" onclick="closeStarNews()">Köszönöm! 😊</button>
     </div>
 </div>
 
@@ -1367,6 +1452,7 @@
         // Felhő: összekötött eszköz szinkronja; a szülőtől kapott linkben (?kod=...) érkező kód beírása
         updateCloudUI();
         renderAssignments();
+        renderStars();
         askWhoIsPracticing();
         cloudSync();
         window.addEventListener('online', () => cloudSync());
@@ -1793,8 +1879,10 @@
             mode: currentMode,
             at: finishedAt.toISOString()
         });
-        // Összekötött eszközön a felhőbe is (internet nélkül sorban vár)
-        cloudQueueSession({
+        // Összekötött eszközön a felhőbe is (internet nélkül sorban vár), és csillag jár érte
+        const assignment = currentAssignmentId &&
+            JSON.parse(localStorage.getItem('szorzo_assignments') || '[]').find(a => a.id === currentAssignmentId);
+        const session = {
             id: currentSessionId,
             mode: currentMode,
             op: currentMode === 'weak' ? null : currentOp,
@@ -1807,15 +1895,23 @@
             pct: pct,
             finished_at: finishedAt.toISOString(),
             assignment_id: currentAssignmentId
-        });
+        };
+        cloudQueueSession(session);
+        const earned = cloudAddStars(session, !!assignment && !assignment.done);
+        const starsLine = document.getElementById('res-stars');
+        starsLine.hidden = !linkedChild();
+        starsLine.classList.toggle('hint', !earned);
+        starsLine.innerText = earned ? `⭐ +${earned} csillag!` : 'Tipp: legalább 10 feladatos tesztért csillag jár ⭐';
         if (currentAssignmentId) {
             cloudMarkAssignmentDone(currentAssignmentId);
             renderAssignments();
         }
+        renderStars();
 
         // Képernyőváltás
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
         document.getElementById('screen-results').classList.add('active');
+        checkStarNews(); // elért cél?
     }
 
     /* --- STATISZTIKA & ADATMENTÉS --- */
@@ -2083,7 +2179,7 @@
     }
 
     /* --- VERZIÓ ÉS MEGOSZTÁS --- */
-    const APP_VERSION = '1.6';
+    const APP_VERSION = '1.7';
     const APP_BUILD = 'dev'; // a közzététel (GitHub Actions) írja át a commit rövid azonosítójára
     const APP_URL = 'https://vmynick.github.io/matek-gyakorlo/';
 
@@ -2287,6 +2383,8 @@
         updateCloudUI();
         updateSetupInfo();
         renderAssignments();
+        renderStars();
+        checkStarNews();
         if (!document.getElementById('profile-overlay').hidden) {
             if (linkedChildren().length > 1) openProfileChooser(); // friss nevek, PIN-ek
             else document.getElementById('profile-overlay').hidden = true;
@@ -2350,6 +2448,60 @@
             card.append(text, start);
             box.appendChild(card);
         });
+    }
+
+    /* --- CSILLAGOK ÉS CÉLOK --- */
+    const starFrom = from => (from && from.kind === 'class' ? `a tanárodtól${from.name ? ` (${from.name})` : ''}` : 'a családodtól');
+    const whoToTell = from => (from && from.kind === 'class' ? 'a tanárodnak' : 'a szüleidnek');
+
+    function renderStars() {
+        const box = document.getElementById('stars-box');
+        const stars = linkedChild() ? JSON.parse(localStorage.getItem('szorzo_stars') || 'null') : null;
+        box.hidden = !stars;
+        if (!stars) return;
+        const goals = stars.goals.filter(g => !g.redeemed_at);
+        box.innerHTML = `<div class="stars-total" title="${escHtml(STAR_RULES)}">⭐ <strong>${stars.total}</strong> csillagod van</div>` +
+            (goals.map(g => {
+                const reached = g.progress >= g.target;
+                return `<div class="goal${reached ? ' reached' : ''}">
+                    <div class="goal-head"><span>${escHtml(g.emoji)} ${escHtml(g.title)}</span>
+                        <span>${reached ? '🎉 Elérted!' : `${g.progress} / ${g.target} ⭐`}</span></div>
+                    <div class="goal-bar"><i style="width:${Math.round(100 * g.progress / g.target)}%"></i></div>
+                    <small>${reached ? `Szólj ${whoToTell(g.from)}, hogy beválthasd!` : `Még ${g.target - g.progress} ⭐ kell hozzá`}</small>
+                </div>`;
+            }).join('') || '<small>Gyakorolj, és gyűjts csillagokat! A szüleid vagy a tanárod célt is kitűzhet.</small>');
+    }
+
+    // Új ajándék csillag vagy elért cél: ünneplő ablak (egyszerre egy; teszt közben nem)
+    let starNews = null;
+    function checkStarNews() {
+        if (starNews || !linkedChild() || document.getElementById('screen-quiz').classList.contains('active')) return;
+        if (['profile-overlay', 'pin-overlay', 'cloud-overlay'].some(id => !document.getElementById(id).hidden)) return;
+        const stars = JSON.parse(localStorage.getItem('szorzo_stars') || 'null');
+        if (!stars || !stars.seen) return;
+        const grant = stars.grants.find(g => !stars.seen.includes(g.id));
+        const goal = !grant && stars.goals.find(g => !g.redeemed_at && g.progress >= g.target && !stars.celebrated.includes(g.id));
+        if (!grant && !goal) return;
+        starNews = grant ? { list: 'seen', id: grant.id } : { list: 'celebrated', id: goal.id };
+        document.getElementById('star-emoji').innerText = grant ? '🎁' : goal.emoji;
+        document.getElementById('star-title').innerText = grant ? `+${grant.amount} ⭐ ajándék!` : `Elérted a célod: ${goal.title}!`;
+        document.getElementById('star-msg').innerText = grant
+            ? `Csillagot kaptál ${starFrom(grant.from)}${grant.note ? `: „${grant.note}”` : '.'}`
+            : `Összegyűlt mind a ${goal.target} csillag. Szólj ${whoToTell(goal.from)}, hogy beválthasd!`;
+        document.getElementById('star-overlay').hidden = false;
+        playSound('correct');
+        if (typeof confetti === 'function') confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 }, zIndex: 2000 });
+    }
+
+    function closeStarNews() {
+        const stars = JSON.parse(localStorage.getItem('szorzo_stars') || 'null');
+        if (stars && starNews) {
+            stars[starNews.list].push(starNews.id);
+            localStorage.setItem('szorzo_stars', JSON.stringify(stars));
+        }
+        starNews = null;
+        document.getElementById('star-overlay').hidden = true;
+        checkStarNews(); // ha van még
     }
 
     // A feladat beállításai (táblák, művelet, mód, darabszám), aztán indul a teszt a feladathoz kötve

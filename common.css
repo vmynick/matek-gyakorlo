@@ -25,6 +25,9 @@
     --danger-border: #fca5a5;
     --warn-bg: #fffbeb;
     --warn-text: #b45309;
+    --star-bg: #fefce8; /* csillagok és célok */
+    --star-border: #fde047;
+    --star-fill: #f59e0b;
     --hm-none-bg: #e2e8f0;
     --hm-none-text: #94a3b8;
     --border-radius: 20px;
@@ -50,8 +53,27 @@
     --danger-border: #7f2d2d;
     --warn-bg: #3b2a0a;
     --warn-text: #fbbf24;
+    --star-bg: #2a2610;
+    --star-border: #a16207;
+    --star-fill: #fbbf24;
     --hm-none-bg: #2b3954;
     --hm-none-text: #6b7a94;
+}
+
+/* ===== Csillagcél haladása ===== */
+
+.goal-bar {
+    height: 10px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    overflow: hidden;
+}
+
+.goal-bar i {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--star-fill), #facc15);
 }
 
 /* ===== Feladat-térkép ===== */
