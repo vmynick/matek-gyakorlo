@@ -12,7 +12,7 @@ const CLOUD_CHILDREN_KEY = 'szorzo_children'; // [{ id, nickname, avatar, pin_ha
 const CLOUD_ACTIVE_KEY = 'szorzo_active_child'; // az éppen gyakorló gyerek azonosítója
 const CLOUD_OUTBOX_KEY = 'szorzo_outbox'; // { answers: [], sessions: [] }
 const CLOUD_SYNC_KEY = 'szorzo_last_sync';
-const CHILD_CACHE_KEYS = ['szorzo_facts', 'szorzo_history'];
+const CHILD_CACHE_KEYS = ['szorzo_facts', 'szorzo_history', 'szorzo_assignments'];
 const CLOUD_UPLOAD_BATCH = 200;
 
 let cloudClient = null;
@@ -208,9 +208,35 @@ async function cloudPull(childId) {
         .select('pct, mode, finished_at').eq('child_id', childId)
         .order('finished_at', { ascending: false }).limit(20);
     if (sessionError) throw sessionError;
+    const assignments = await cloudFetchAssignments(childId);
     if (cloudRead(CLOUD_ACTIVE_KEY, null) !== childId) return; // közben gyereket váltottak
     cloudWrite('szorzo_facts', factsFromCloud(facts));
     cloudWrite('szorzo_history', historyFromCloud(sessions));
+    cloudWrite('szorzo_assignments', assignments);
+}
+
+// A gyerek csoportjainak kiosztott feladatai, jelölve, melyiket csinálta már meg (szorzo_assignments)
+async function cloudFetchAssignments(childId) {
+    const { data: links, error } = await cloud().from('child_groups').select('group_id').eq('child_id', childId);
+    if (error) throw error;
+    if (!links.length) return [];
+    const { data: tasks, error: taskError } = await cloud().from('assignments')
+        .select('id, op, tables, mode, question_count, due_date, note, created_at')
+        .in('group_id', links.map(l => l.group_id)).order('created_at', { ascending: false });
+    if (taskError) throw taskError;
+    const { data: done, error: doneError } = await cloud().from('quiz_sessions')
+        .select('assignment_id').eq('child_id', childId).not('assignment_id', 'is', null);
+    if (doneError) throw doneError;
+    const doneIds = new Set(done.map(d => d.assignment_id));
+    // ami még nem ment fel, de már megcsinálta (internet nélkül), az is kész
+    cloudOutbox().sessions.forEach(s => { if (s.child_id === childId && s.assignment_id) doneIds.add(s.assignment_id); });
+    return tasks.map(t => ({ ...t, done: doneIds.has(t.id) }));
+}
+
+// A gyerek megcsinált egy feladatot: helyben rögtön kész (a felhőbe a teszttel együtt kerül fel)
+function cloudMarkAssignmentDone(assignmentId) {
+    const list = cloudRead('szorzo_assignments', []);
+    cloudWrite('szorzo_assignments', list.map(a => (a.id === assignmentId ? { ...a, done: true } : a)));
 }
 
 // child_facts sorai -> { "mul:7:8": { n, ok, bone, bad, r, ms } } (a szülői felület is használja)

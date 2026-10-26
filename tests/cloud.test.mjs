@@ -89,7 +89,12 @@ const results = [];
 async function test(name, fn) {
     const checks = [];
     const expect = (ok, msg) => checks.push({ ok: !!ok, msg });
-    try { await fn(expect); } catch (e) { checks.push({ ok: false, msg: `kivétel: ${e.message.split('\n')[0]}` }); }
+    try {
+        await fn(expect);
+    } catch (e) {
+        // az első sorok: a hiba és hogy melyik elemre várt
+        checks.push({ ok: false, msg: `kivétel: ${e.message.split('\n').filter((l) => l.trim()).slice(0, 3).join(' | ')}` });
+    }
     const ok = checks.every((c) => c.ok);
     results.push(ok);
     console.log(`${ok ? 'OK  ' : 'HIBA'}  ${name}`);
@@ -114,6 +119,11 @@ async function playExam(page, table, wrongFirst = 0) {
     await page.evaluate(() => { selectedTables = []; renderTableSelector(); }); // csak az adott tábla legyen kijelölve
     await page.locator('#tables-grid button').nth(table).click();
     await page.locator('#screen-setup .btn-start').click();
+    await answerUntilResults(page, wrongFirst);
+}
+
+// Végigválaszolja a futó tesztet (az első wrongFirst feladatot rosszul), aztán vissza a beállításokhoz
+async function answerUntilResults(page, wrongFirst = 0) {
     for (let i = 0; i < 40 && await page.locator('#screen-quiz.active').count(); i++) {
         const q = await page.evaluate(() => {
             const a = +document.getElementById('q-factor1').innerText, b = +document.getElementById('q-factor2').innerText;
@@ -144,7 +154,7 @@ async function main() {
         await parent.goto(link.action_link);
         await parent.locator('#view-home').waitFor({ state: 'visible', timeout: 20000 });
         expect((await parent.locator('#who-email').innerText()) === 'admin@teszt.matek', 'nem az admin lépett be');
-        expect(await parent.locator('#admin-card').isVisible(), 'az admin kártya hiányzik');
+        expect(await parent.locator('#mode-tabs [data-mode="admin"]').isVisible(), 'az admin fül hiányzik');
         await parent.fill('#group-name', 'Teszt család');
         await parent.locator('#new-group-card .btn').click();
         await parent.locator('.card h2', { hasText: 'Teszt család' }).waitFor();
@@ -189,7 +199,7 @@ async function main() {
     });
 
     await test('Szülő látja a gyerek statisztikáját és az eszközt', async (expect) => {
-        await parent.locator('button', { hasText: 'Vissza a csoportokhoz' }).click();
+        await parent.locator('button:visible', { hasText: 'Vissza a csoportokhoz' }).click();
         await parent.locator('.child-btn', { hasText: 'Bori' }).click();
         await parent.locator('#view-child').waitFor({ state: 'visible' });
         const summary = await parent.locator('#child-summary').innerText();
@@ -205,7 +215,7 @@ async function main() {
         await parent.fill('#child-pin', '1234');
         await parent.locator('button', { hasText: 'PIN beállítása' }).click();
         await parent.locator('#pin-status', { hasText: 'Be van kapcsolva' }).waitFor({ timeout: 10000 });
-        await parent.locator('button', { hasText: 'Vissza a csoportokhoz' }).click();
+        await parent.locator('button:visible', { hasText: 'Vissza a csoportokhoz' }).click();
         await parent.locator('summary', { hasText: 'Gyerek hozzáadása' }).click();
         await parent.locator('.add-child-box .avatars button', { hasText: '🐯' }).first().click();
         await parent.fill('.add-child input[name=nickname]', 'Peti');
@@ -261,7 +271,7 @@ async function main() {
     await test('Meghívás az appból: a meghívott belép és látja a családot', async (expect) => {
         // a teszt projekt nem küld levelet: a levélküldést itt "elfogjuk"
         await parent.route('**/auth/v1/otp**', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
-        await parent.locator('button', { hasText: 'Vissza a csoportokhoz' }).click();
+        await parent.locator('button:visible', { hasText: 'Vissza a csoportokhoz' }).click();
         await parent.locator('summary', { hasText: 'Felnőttek (' }).first().click();
         await parent.fill('.invite input[name=email]', 'masik@teszt.matek');
         await parent.locator('.invite .btn').click();
@@ -339,23 +349,33 @@ async function main() {
     });
 
     const adultToken = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('szorzo-felnott-auth')).access_token);
+    // Szülő / tanár / admin fül a szülői felületen
+    const mode = async (page, m) => {
+        await page.locator('button:visible', { hasText: 'Vissza a csoportokhoz' }).click().catch(() => {});
+        await page.locator(`#mode-tabs [data-mode="${m}"]`).click();
+    };
     const familyId = async () => (await sql('test', `select id from public.groups where name = 'Teszt család'`))[0].id;
     const childId = async (name) => (await sql('test', `select id from public.children where nickname = '${name}'`))[0].id;
 
     await test('Osztály: csatlakozási kód, a tanár látja a gyereket, a szülő kiveheti, admin megvonja a hozzáférést', async (expect) => {
         // Az admin meghív egy tanárt, aki saját csoportot hozhat létre
         await parent.route('**/auth/v1/otp**', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
-        await parent.locator('button', { hasText: 'Vissza a csoportokhoz' }).click().catch(() => {});
+        await parent.locator('button:visible', { hasText: 'Vissza a csoportokhoz' }).click().catch(() => {});
         await parent.locator('#view-home').waitFor({ state: 'visible' });
+        await mode(parent, 'admin');
+        expect((await parent.locator('#console-title').innerText()).includes('Admin'), 'az admin fül címe');
         await parent.fill('#creator-email', 'tanar@teszt.matek');
         await parent.locator('#admin-card .btn', { hasText: 'Meghívás' }).click();
         await parent.locator('#creator-msg.ok').waitFor({ timeout: 10000 });
+        await mode(parent, 'family');
+        expect((await parent.locator('#console-title').innerText()).includes('Szülői felület'), 'a szülő fül címe');
 
         const teacher = await newContext(browser);
         await teacher.goto((await magicLink('tanar@teszt.matek')).action_link);
         await teacher.locator('#view-home').waitFor({ state: 'visible', timeout: 20000 });
+        await mode(teacher, 'class');
+        expect((await teacher.locator('#console-title').innerText()).includes('Tanári felület'), 'a tanár fül címe');
         await teacher.fill('#group-name', '3.b');
-        await teacher.selectOption('#group-kind', 'class');
         await teacher.locator('#new-group-card .btn').click();
         await teacher.locator('.card h2', { hasText: '3.b' }).waitFor();
         await teacher.locator('[data-act="joincode"]').click();
@@ -382,17 +402,98 @@ async function main() {
         const familyRemove = await rpc('remove_child_from_group', await adultToken(teacher),
             { p_child_id: await childId('Bori'), p_group_id: await familyId() });
         expect(!familyRemove.ok, 'a tanár kivehette a gyereket a családból');
+        // "A család az első": a tanár nem kér eszköz-kódot, nem töröl, és a felületen nem is látja ezeket
+        const teacherToken = await adultToken(teacher);
+        const teacherCode = await rpc('create_device_code', teacherToken, { p_child_id: await childId('Bori') });
+        expect(!teacherCode.ok, 'a tanár eszköz-kódot kérhetett a családi gyereknek');
+        await rest('DELETE', `children?id=eq.${await childId('Bori')}`, teacherToken);
+        expect((await sql('test', `select count(*) as n from public.children where nickname = 'Bori'`))[0].n == 1, 'a tanár törölhette a családi gyereket');
+        expect(await teacher.locator('#child-devices-card').isHidden() && await teacher.locator('#delete-child-btn').isHidden(),
+            'a tanárnak látszanak a család eszközei / a törlés gomb');
         const children = await rest('GET', 'children?select=nickname', await adultToken(teacher));
         expect(JSON.stringify(children.data) === '[{"nickname":"Bori"}]', `a tanár ezeket a gyerekeket látja: ${JSON.stringify(children.data)}`);
 
-        // A szülő kiveszi az osztályból
+        // Csatlakozási kód családhoz nem kérhető
+        const familyCode = await rpc('create_group_join_code', await adultToken(parent), { p_group_id: await familyId() });
+        expect(!familyCode.ok, 'családhoz is lehetett csatlakozási kódot kérni');
+
+        // A tanár meghív egy szülőt: családot hozhat létre, osztályt nem
+        await teacher.route('**/auth/v1/otp**', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
+        await teacher.locator('button:visible', { hasText: 'Vissza a csoportokhoz' }).click();
+        await teacher.locator('summary', { hasText: 'Szülő meghívása' }).click();
+        await teacher.fill('.invite-parent input[name=email]', 'szulo2@teszt.matek');
+        await teacher.locator('.invite-parent .btn').click();
+        await teacher.locator('.invite-parent + .msg.ok').waitFor({ timeout: 10000 });
+        const parent2 = await tokenFor('szulo2@teszt.matek');
+        await rpc('accept_invitations', parent2);
+        const familyOk = await rpc('create_group', parent2, { p_name: 'Szülő2 család', p_kind: 'family' });
+        const classNo = await rpc('create_group', parent2, { p_name: 'Kamu osztály', p_kind: 'class' });
+        expect(familyOk.ok && !classNo.ok, `a tanártól meghívott szülő: család ${familyOk.status}, osztály ${classNo.status} (család igen, osztály nem)`);
+
+        // Peti is bekerül az osztályba; a tanár összesítést lát
+        await parent.locator('button:visible', { hasText: 'Vissza a csoportokhoz' }).click();
+        await parent.locator('.child-btn', { hasText: 'Peti' }).first().click();
+        await parent.locator('#view-child').waitFor({ state: 'visible' });
+        await parent.locator('summary', { hasText: 'Csatlakozás osztályhoz' }).click();
+        await parent.fill('#join-code', joinCode);
+        await parent.locator('#view-child').getByRole('button', { name: 'Csatlakozás', exact: true }).click();
+        await parent.locator('#child-group-list', { hasText: '3.b' }).waitFor({ timeout: 10000 });
+
+        const classCard = () => teacher.locator('.card', { has: teacher.locator('h2', { hasText: '3.b' }) });
+        await teacher.reload();
+        await classCard().locator('[data-act="overview"]').click();
+        await teacher.locator('#view-group').waitFor({ state: 'visible', timeout: 10000 });
+        const groupColored = await teacher.locator('#group-heatmap .hm-cell:not(.hm-none):not(.hm-head)').count();
+        expect(groupColored === 33, `az osztály térképén ${groupColored} színes mező (Bori 22 + Peti 11 = 33 kell)`);
+        await teacher.locator('#group-heatmap .hm-cell.hm-l0').first().click();
+        const groupDetail = await teacher.locator('#group-hm-detail').innerText();
+        expect(groupDetail.includes('Gyakorolnia kell') && groupDetail.includes('Bori'), `összesítés részletei: ${groupDetail}`);
+        const kidsList = await teacher.locator('#group-children').innerText();
+        expect(kidsList.includes('Bori') && kidsList.includes('Peti'), `gyerekek a csoportban: ${kidsList}`);
+
+        // Feladat kiosztása: 6-os tábla, 5 db, határidő 3 nap múlva
+        await teacher.locator('summary', { hasText: 'Új feladat kiosztása' }).click();
+        await teacher.locator('#assign-tables button', { hasText: '6-os' }).click();
+        await teacher.fill('#assign-count', '5');
+        await teacher.fill('#assign-due', new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10));
+        await teacher.fill('#assign-note', 'Hajrá!');
+        await teacher.locator('.assign-form .btn').click();
+        await teacher.locator('#assignment-list .assignment', { hasText: '6-os tábla' }).waitFor({ timeout: 10000 });
+        expect((await teacher.locator('#assignment-list').innerText()).includes('kész: 0/2'),
+            `feladatlista: ${await teacher.locator('#assignment-list').innerText()}`);
+
+        // Peti tabletjén megjelenik, megcsinálja, a kártya eltűnik, a tanárnál kész
+        await kid.reload();
+        await kid.locator('.assignment-card', { hasText: '6-os' }).waitFor({ timeout: 20000 });
+        expect((await kid.locator('.assignment-card').innerText()).includes('Hajrá'), 'a feladat üzenete nem látszik');
+        await shot(kid, '5-feladat-kartya');
+        await kid.locator('.assignment-card button', { hasText: 'Indítás' }).click();
+        const quizSize = await kid.evaluate(() => quizDeck.length);
+        expect(quizSize === 5 && (await kid.evaluate(() => currentAssignmentId)), `a feladat teszt: ${quizSize} kérdés (5 kell)`);
+        await answerUntilResults(kid);
+        await kid.waitForFunction(() => !JSON.parse(localStorage.getItem('szorzo_outbox') || '{"sessions":[1]}').sessions.length,
+            null, { timeout: 20000 });
+        expect(!(await kid.locator('.assignment-card').count()), 'a kész feladat kártyája nem tűnt el');
+        await teacher.reload();
+        await classCard().locator('[data-act="overview"]').click();
+        await teacher.locator('#assignment-list .done', { hasText: 'Peti' }).waitFor({ timeout: 10000 });
+        expect((await teacher.locator('#assignment-list').innerText()).includes('kész: 1/2'),
+            `feladatlista: ${await teacher.locator('#assignment-list').innerText()}`);
+        await shot(teacher, '6-osztaly-osszesites');
+
+        // A szülő kiveszi Borit az osztályból (Peti bent marad)
+        await parent.locator('button:visible', { hasText: 'Vissza a csoportokhoz' }).click();
+        await parent.locator('.child-btn', { hasText: 'Bori' }).first().click();
+        await parent.locator('#view-child').waitFor({ state: 'visible' });
         await parent.locator('#child-group-list li', { hasText: '3.b' }).locator('button', { hasText: 'kivétel' }).click();
         await parent.locator('#child-group-list', { hasText: '3.b' }).waitFor({ state: 'detached', timeout: 10000 }).catch(() => {});
-        const left = await sql('test', `select count(*) as n from public.child_groups cg join public.groups g on g.id = cg.group_id where g.name = '3.b'`);
-        expect(+left[0].n === 0, 'Bori bent maradt az osztályban');
+        const left = await sql('test', `select string_agg(c.nickname, ',') as kids from public.child_groups cg
+            join public.groups g on g.id = cg.group_id join public.children c on c.id = cg.child_id where g.name = '3.b'`);
+        expect(left[0].kids === 'Peti', `az osztályban maradt: ${left[0].kids} (csak Peti kell)`);
 
         // Az admin megvonja a tanár hozzáférését: a fiók és a csak az övé lévő osztály törlődik
-        await parent.locator('button', { hasText: 'Vissza a csoportokhoz' }).click();
+        await parent.locator('button:visible', { hasText: 'Vissza a csoportokhoz' }).click();
+        await mode(parent, 'admin');
         await parent.locator('summary', { hasText: 'Felnőttek kezelése' }).click();
         await parent.locator('#admin-adults', { hasText: 'tanar@teszt.matek' }).waitFor({ timeout: 10000 });
         await parent.locator('#admin-adults li', { hasText: 'tanar@teszt.matek' }).locator('[data-revoke]').click();
@@ -405,6 +506,7 @@ async function main() {
     });
 
     await test('Szerkesztés: gyerek átnevezése, szerep, utolsó tulajdonos, csoport törlése, saját fiók törlése', async (expect) => {
+        await mode(parent, 'family');
         // Gyerek átnevezése és avatar csere
         await parent.locator('.child-btn', { hasText: 'Peti' }).first().click();
         await parent.locator('#view-child').waitFor({ state: 'visible' });
@@ -417,7 +519,7 @@ async function main() {
         expect(renamed.length === 1 && renamed[0].avatar === '🦄', `átnevezés: ${JSON.stringify(renamed)}`);
 
         // A meghívott felnőtt tulajdonos lesz a családban
-        await parent.locator('button', { hasText: 'Vissza a csoportokhoz' }).click();
+        await parent.locator('button:visible', { hasText: 'Vissza a csoportokhoz' }).click();
         const family = parent.locator('.card', { has: parent.locator('h2', { hasText: 'Teszt család' }) });
         await family.locator('summary', { hasText: 'Felnőttek' }).click();
         await family.locator('li', { hasText: 'masik@teszt.matek' }).locator('.role-select').selectOption('owner');

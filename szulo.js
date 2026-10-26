@@ -25,7 +25,7 @@ let childHeatmapOp = 'mul';
 let childChart = null;
 let lastCode = null;
 
-const VIEWS = ['loading', 'view-login', 'view-noaccess', 'view-home', 'view-child'];
+const VIEWS = ['loading', 'view-login', 'view-noaccess', 'view-home', 'view-group', 'view-child'];
 function show(id) {
     VIEWS.forEach(v => { document.getElementById(v).hidden = v !== id; });
     window.scrollTo(0, 0);
@@ -131,7 +131,7 @@ async function logout() {
 async function loadHome() {
     const { data: { user } } = await sb.auth.getUser();
     const { data: adult, error } = await sb.from('adults')
-        .select('id, email, is_admin, can_create_groups').eq('id', user.id).single();
+        .select('id, email, is_admin, can_create_groups, can_create_classes').eq('id', user.id).single();
     if (error) return fail(error);
     me = adult;
 
@@ -150,47 +150,162 @@ function showHome() {
     loadHome();
 }
 
-function renderHome() {
-    const wrap = document.getElementById('groups');
-    wrap.innerHTML = '';
-    const canCreate = me.can_create_groups || me.is_admin;
-    if (!groups.length) {
-        wrap.innerHTML = `<section class="card"><h2>👋 Üdv!</h2><p class="muted">${canCreate
-            ? 'Hozz létre lent egy csoportot (családot vagy osztályt), és add hozzá a gyerekeket.'
-            : 'Még nem vagy egy csoportnak sem a tagja. Kérj meghívót egy csoport tulajdonosától.'}</p></section>`;
-    }
-    groups.forEach(g => wrap.appendChild(groupCard(g)));
-    document.getElementById('new-group-card').hidden = !canCreate;
-    document.getElementById('admin-card').hidden = !me.is_admin;
-    loadPending();
-    if (me.is_admin) loadAdmin();
+/* A felület a szerephez igazodik: a szülőnek a gyerekei, a tanárnak az osztályai elöl.
+   Akinek több szerepe is van (pl. tanár, aki szülő is; admin), felül füllel vált. */
+const MODE_TITLES = { family: '👨‍👩‍👧 Szülői felület', class: '🏫 Tanári felület', admin: '🛡️ Admin' };
+let consoleMode = null;
+
+function availableModes() {
+    const canFamily = me.can_create_groups || me.is_admin;
+    const canClass = me.can_create_classes || me.is_admin;
+    const hasFamily = groups.some(g => g.kind === 'family');
+    const hasClass = groups.some(g => g.kind === 'class');
+    const modes = [];
+    if (hasFamily || canFamily || (!hasClass && !canClass)) modes.push('family');
+    if (hasClass || canClass) modes.push('class');
+    if (me.is_admin) modes.push('admin');
+    return modes;
 }
 
-function groupCard(g) {
+function setConsoleMode(mode) {
+    consoleMode = mode;
+    try { localStorage.setItem('szorzo_konzol_mod', mode); } catch (e) { /* csak most vált */ }
+    renderHome();
+}
+
+function renderHome() {
+    const modes = availableModes();
+    let saved = null;
+    try { saved = localStorage.getItem('szorzo_konzol_mod'); } catch (e) { /* nincs mentett */ }
+    if (!modes.includes(consoleMode)) consoleMode = modes.includes(saved) ? saved : modes[0];
+    const mode = consoleMode;
+
+    document.getElementById('console-title').innerText = MODE_TITLES[mode];
+    document.title = `${MODE_TITLES[mode].replace(/^\S+\s/, '')} – Szorzótábla Mester`;
+    const tabs = document.getElementById('mode-tabs');
+    tabs.hidden = modes.length < 2;
+    tabs.querySelectorAll('button').forEach(b => {
+        b.hidden = !modes.includes(b.dataset.mode);
+        b.classList.toggle('active', b.dataset.mode === mode);
+    });
+    document.getElementById('home-family').hidden = mode !== 'family';
+    document.getElementById('home-class').hidden = mode !== 'class';
+    document.getElementById('admin-card').hidden = mode !== 'admin';
+
+    if (mode === 'family') renderFamilyHome();
+    if (mode === 'class') renderClassHome();
+    if (mode === 'admin') loadAdmin();
+
+    // Új csoport: a szülő családot, a tanár osztályt hoz létre (külön jog)
+    const canNew = mode === 'family' ? (me.can_create_groups || me.is_admin)
+        : mode === 'class' ? (me.can_create_classes || me.is_admin) : false;
+    document.getElementById('new-group-card').hidden = !canNew;
+    document.getElementById('group-kind').value = mode === 'class' ? 'class' : 'family';
+    document.getElementById('new-group-title').innerText = mode === 'class' ? '➕ Új osztály' : '➕ Új család';
+    document.getElementById('new-group-help').innerText = mode === 'class'
+        ? 'Az osztály gyerekeit a szülők a csatlakozási kóddal teszik be, vagy te is felveheted őket (pl. iskolai tableteken).'
+        : 'A saját gyerekeidnek. A család többi felnőttjét (pl. a másik szülőt) utána meghívhatod.';
+    document.getElementById('group-name').placeholder = mode === 'class' ? 'pl. 3.b' : 'pl. Kovács család';
+    loadPending();
+}
+
+// Szülő: nagy kártyák a gyerekekről (mikor gyakorolt, mi vár gyakorlásra, kiosztott feladatok), alatta a családok
+function renderFamilyHome() {
+    const families = groups.filter(g => g.kind === 'family');
+    const kids = new Map();
+    families.forEach(g => g.child_groups.forEach(cg => { if (cg.children) kids.set(cg.children.id, cg.children); }));
+    const box = document.getElementById('my-children');
+    const sorted = [...kids.values()].sort((a, b) => a.nickname.localeCompare(b.nickname, 'hu'));
+    box.innerHTML = sorted.map(c => `
+        <button class="kid-card child-btn" data-child="${c.id}">
+            <span class="kid-avatar">${esc(c.avatar)}</span>
+            <span class="kid-name">${esc(c.nickname)}</span>
+            <span class="kid-meta" data-meta="${c.id}">${esc(lastSeen(c))}</span>
+        </button>`).join('') || `<p class="muted">${families.length
+            ? 'Még nincs gyerek. Lent, a családodnál add hozzá („Gyerek hozzáadása”).'
+            : 'Hozz létre lent egy családot, és vedd fel a gyerekeidet. Ha a tanár adott csatlakozási kódot, azt a gyereked oldalán írd be.'}</p>`;
+    box.querySelectorAll('[data-child]').forEach(b => { b.onclick = () => openChild(b.dataset.child); });
+
+    const wrap = document.getElementById('family-groups');
+    wrap.innerHTML = '';
+    families.forEach(g => wrap.appendChild(groupCard(g, 'family')));
+
+    // Részletek a kártyákra (a háttérben): az elmúlt hét, gyakorlásra váró, nyitott feladatok
+    families.forEach(async g => {
+        const { data } = await sb.rpc('group_children_summary', { p_group_id: g.id });
+        for (const s of data || []) {
+            const meta = box.querySelector(`[data-meta="${s.child_id}"]`);
+            if (!meta) continue;
+            const { data: tasks } = await sb.rpc('child_assignments', { p_child_id: s.child_id });
+            const open = (tasks || []).filter(t => !t.done && (!t.due_date || new Date(`${t.due_date}T23:59:59`) > new Date())).length;
+            meta.innerText = `az elmúlt 7 napban ${s.answers_7d} feladat` +
+                (s.weak ? ` · 🎯 ${s.weak} gyakorlásra vár` : '') +
+                (open ? ` · 📌 ${open} kiosztott feladat` : '') +
+                ` · ${s.last_answer ? `utoljára ${whenText(s.last_answer)}` : 'még nem gyakorolt'}`;
+        }
+    });
+}
+
+// Tanár: osztálykártyák rövid összegzéssel
+function renderClassHome() {
+    const classes = groups.filter(g => g.kind === 'class');
+    const wrap = document.getElementById('class-groups');
+    wrap.innerHTML = classes.length ? '' : `<section class="card"><h2>👋 Üdv!</h2><p class="muted">${
+        (me.can_create_classes || me.is_admin) ? 'Hozz létre lent egy osztályt. Utána a szülőknek csatlakozási kódot adhatsz.'
+            : 'Még nem vagy egy osztálynak sem a tagja.'}</p></section>`;
+    classes.forEach(g => wrap.appendChild(groupCard(g, 'class')));
+    classes.forEach(async g => {
+        const { data } = await sb.rpc('group_children_summary', { p_group_id: g.id });
+        const el = wrap.querySelector(`[data-summary="${g.id}"]`);
+        if (!el || !data) return;
+        const active = data.filter(s => s.answers_7d > 0).length;
+        const needHelp = data.filter(s => s.weak > 0).length;
+        el.innerText = `👧 ${data.length} gyerek · ✅ ${active} gyakorolt a héten · 🎯 ${needHelp} gyereknek van gyakorlásra váró feladata`;
+    });
+}
+
+// view: 'family' (a gyerekek fent, kártyán látszanak) vagy 'class' (összegzés és nagy összesítés gomb)
+function groupCard(g, view) {
     const isOwner = g.group_members.some(m => m.adult_id === me.id && m.role === 'owner');
+    const isClass = g.kind === 'class';
     const children = g.child_groups.map(cg => cg.children).filter(Boolean)
         .sort((a, b) => a.nickname.localeCompare(b.nickname, 'hu'));
     const card = document.createElement('section');
     card.className = 'card';
     card.innerHTML = `
         <h2>${g.kind === 'class' ? '🏫' : '🏠'} ${esc(g.name)} <span class="muted">${isOwner ? 'tulajdonos' : 'tag'}</span></h2>
-        ${isOwner ? `
+        ${view === 'class' ? `
+        <p class="class-summary" data-summary="${g.id}"></p>
+        <div class="row"><button class="btn" data-act="overview">📊 Összesítés és feladatok</button></div>` : ''}
         <div class="row group-actions">
+            ${view === 'class' ? '' : '<button class="link" data-act="overview">📊 Összesítés és feladatok</button>'}
+            ${isOwner ? `
             <button class="link" data-act="rename">✏️ Átnevezés</button>
-            <button class="link" data-act="joincode">🔑 Csatlakozási kód szülőknek</button>
-            <button class="link danger-link" data-act="delete">🗑️ Csoport törlése</button>
+            ${isClass ? '<button class="link" data-act="joincode">🔑 Csatlakozási kód szülőknek</button>' : ''}
+            <button class="link danger-link" data-act="delete">🗑️ Csoport törlése</button>` : ''}
         </div>
+        ${isOwner && isClass ? `
         <div class="code-box join-box" hidden>
             <div class="code"></div>
             <p class="muted"></p>
             <div class="row" style="justify-content:center">
                 <button class="btn secondary" data-act="sharejoin">📤 Kód küldése a szülőknek</button>
             </div>
-        </div>` : ''}
+        </div>
+        <details>
+            <summary>👪 Szülő meghívása</summary>
+            <p class="muted">A szülő belépő linket kap e-mailben. Létrehozhatja a saját családját, felveheti a gyerekét, és a csatlakozási kóddal beteheti az osztályba. Az osztály többi gyerekét nem látja.</p>
+            <form class="invite-parent row">
+                <input type="email" name="email" required placeholder="szulo@pelda.hu">
+                <button class="btn">Meghívás</button>
+            </form>
+            <p class="msg"></p>
+        </details>` : ''}
+        ${view === 'family' ? '' : `
         <div class="chips">${children.map(c => `
             <button class="child-btn" data-child="${c.id}">
                 <strong>${esc(c.avatar)} ${esc(c.nickname)}</strong><span>${esc(lastSeen(c))}</span>
-            </button>`).join('') || '<span class="muted">Még nincs gyerek a csoportban.</span>'}</div>
+            </button>`).join('') || '<span class="muted">Még nincs gyerek a csoportban.</span>'}</div>`}
         <details class="add-child-box">
             <summary>➕ Gyerek hozzáadása</summary>
             <form class="add-child">
@@ -241,8 +356,23 @@ function groupCard(g) {
         };
     }
 
-    // Tulajdonosi műveletek
     const act = name => card.querySelector(`[data-act="${name}"]`);
+    act('overview').onclick = () => openGroup(g.id);
+    const inviteParent = card.querySelector('.invite-parent');
+    if (inviteParent) {
+        inviteParent.onsubmit = async (event) => {
+            event.preventDefault();
+            const msgEl = inviteParent.nextElementSibling;
+            const email = inviteParent.email.value.trim().toLowerCase();
+            setMsg(msgEl, '', 'Meghívás…');
+            const { data: result, error } = await sb.rpc('invite_parent', { p_email: email });
+            if (error) return setMsg(msgEl, 'error', error.message);
+            if (result === 'added') return setMsg(msgEl, 'ok', `${email} már regisztrált: családot hozhat létre.`);
+            await sendInviteMail(email, msgEl);
+        };
+    }
+
+    // Tulajdonosi műveletek
     if (isOwner) {
         act('rename').onclick = async () => {
             const name = (prompt('A csoport új neve:', g.name) || '').trim();
@@ -260,7 +390,7 @@ function groupCard(g) {
             toast(`🗑️ Csoport törölve: ${g.name}`);
             loadHome();
         };
-        act('joincode').onclick = async () => {
+        if (isClass) act('joincode').onclick = async () => {
             const { data, error } = await sb.rpc('create_group_join_code', { p_group_id: g.id });
             if (error) return fail(error);
             const box = card.querySelector('.join-box');
@@ -357,6 +487,11 @@ async function inviteAdult(rawEmail, groupId, role, canCreateGroups, msgEl) {
         loadHome();
         return;
     }
+    await sendInviteMail(email, msgEl);
+}
+
+// A meghívott belépő linket kap e-mailben (a meghívó már az adatbázisban van, ettől regisztrálhat)
+async function sendInviteMail(email, msgEl) {
     const { error: mailError } = await mailer.auth.signInWithOtp(
         { email, options: { shouldCreateUser: true, emailRedirectTo: CONSOLE_URL } });
     if (mailError) {
@@ -408,18 +543,48 @@ async function openChild(id) {
     renderPinStatus();
     lastCode = null;
     show('loading');
+    // minden gyerek oldala zárt részekkel indul (ne maradjon nyitva az előző gyereknél lenyitott rész)
+    document.querySelectorAll('#view-child details').forEach(d => { d.open = false; });
     renderChildHead();
     setMsg('join-msg', '', '');
     document.getElementById('join-code').value = '';
     document.getElementById('delete-child-btn').hidden = !currentChild.owner;
     document.getElementById('code-box').hidden = true;
     try {
-        await Promise.all([loadChildStats(), loadDevices(), loadChildGroups()]);
+        await Promise.all([loadChildStats(), loadDevices(), loadChildGroups(), loadChildAssignments()]);
     } catch (e) {
         return fail(e);
     }
+    applyChildRights();
     show('view-child');
     renderChildStats(); // a grafikonnak látható vászon kell
+}
+
+// "A család az első": ha a gyereknek van családja, az eszközeit, PIN-jét, nevét és a törlést a család kezeli
+// (a tanár látja az eredményeket, de ezeket nem). Ugyanezt az adatbázis is kikényszeríti.
+function applyChildRights() {
+    const groupsOfChild = currentChild.groups || [];
+    const hasFamily = groupsOfChild.some(g => g.kind === 'family');
+    const primary = hasFamily ? groupsOfChild.some(g => g.kind === 'family' && g.is_member) : true;
+    const primaryOwner = hasFamily ? groupsOfChild.some(g => g.kind === 'family' && g.is_owner) : currentChild.owner;
+    ['child-edit-box', 'child-join-box', 'child-devices-card', 'child-pin-card', 'clear-stats-btn']
+        .forEach(id => { document.getElementById(id).hidden = !primary; });
+    document.getElementById('delete-child-btn').hidden = !primaryOwner;
+    document.getElementById('child-danger-card').hidden = !primary && !primaryOwner;
+}
+
+async function loadChildAssignments() {
+    const { data, error } = await sb.rpc('child_assignments', { p_child_id: currentChild.id });
+    if (error) throw error;
+    document.getElementById('child-assignments-card').hidden = !data.length;
+    document.getElementById('child-assignments').innerHTML = data.map(a => {
+        const overdue = a.due_date && new Date(`${a.due_date}T23:59:59`) < new Date();
+        const due = a.due_date ? ` · határidő: ${new Date(`${a.due_date}T12:00:00`).toLocaleDateString('hu-HU', { month: 'short', day: 'numeric' })}` : '';
+        const where = a.group_name ? `${a.group_kind === 'class' ? '🏫' : '🏠'} ${esc(a.group_name)}` : '🏠 család';
+        const status = a.done ? `✅ kész (${a.last_pct}%)` : overdue ? '⚠️ lejárt' : '⏳ még nincs kész';
+        return `<li><span>📌 ${esc(assignmentLabel(a))}<br><span class="muted">${where}${esc(due)}${a.note ? ` · 💬 ${esc(a.note)}` : ''}</span></span>
+            <span>${status}</span></li>`;
+    }).join('');
 }
 
 /* ---------- A gyerek neve, avatarja ---------- */
@@ -533,14 +698,17 @@ async function loadAdmin() {
             <span><strong>${esc(a.email)}</strong>${self ? ' (te)' : ''}${a.is_admin ? ' 🛡️' : ''}<br>
                 <span class="muted">${groupsText} · utoljára belépett: ${esc(whenText(a.last_sign_in_at))}</span></span>
             <span class="row">
-                <label class="muted"><input type="checkbox" data-create="${a.id}" ${a.can_create_groups ? 'checked' : ''} ${self ? 'disabled' : ''}> csoportot hozhat létre</label>
+                <label class="muted"><input type="checkbox" data-rights="${a.id}" data-kind="family" ${a.can_create_groups ? 'checked' : ''} ${self ? 'disabled' : ''}> családot</label>
+                <label class="muted"><input type="checkbox" data-rights="${a.id}" data-kind="class" ${a.can_create_classes ? 'checked' : ''} ${self ? 'disabled' : ''}> osztályt hozhat létre</label>
                 ${self ? '' : `<button class="link danger-link" data-revoke="${a.id}" data-email="${esc(a.email)}">hozzáférés megvonása</button>`}
             </span>
         </li>`;
     }).join('');
-    list.querySelectorAll('[data-create]').forEach(box => {
+    list.querySelectorAll('[data-rights]').forEach(box => {
         box.onchange = async () => {
-            const { error: setError } = await sb.rpc('admin_set_can_create_groups', { p_adult: box.dataset.create, p_value: box.checked });
+            const id = box.dataset.rights;
+            const value = kind => list.querySelector(`[data-rights="${id}"][data-kind="${kind}"]`).checked;
+            const { error: setError } = await sb.rpc('admin_set_rights', { p_adult: id, p_families: value('family'), p_classes: value('class') });
             if (setError) return fail(setError);
             toast('✅ Mentve');
         };
@@ -695,6 +863,132 @@ async function deleteChild() {
     if (error) return fail(error);
     toast(`🗑️ ${currentChild.nickname} törölve`);
     showHome();
+}
+
+/* ---------- Egy csoport együtt: összesített térkép, gyerekek, kiosztott feladatok ---------- */
+
+let currentGroup = null;
+let groupFacts = {};
+let groupHeatmapOp = 'mul';
+const TABLE_SUFFIX = ['s', 'es', 'es', 'as', 'es', 'ös', 'os', 'es', 'as', 'es', 'es'];
+const OP_NAMES = { mul: 'szorzás', div: 'osztás', mix: 'vegyes' };
+
+async function openGroup(id) {
+    const g = groups.find(x => x.id === id);
+    currentGroup = { ...g, isOwner: g.group_members.some(m => m.adult_id === me.id && m.role === 'owner') };
+    show('loading');
+    document.getElementById('group-icon').innerText = g.kind === 'class' ? '🏫' : '🏠';
+    document.getElementById('group-title').innerText = g.name;
+    renderAssignTables();
+    try {
+        await Promise.all([loadGroupFacts(), loadGroupChildren(), loadAssignments()]);
+    } catch (e) {
+        return fail(e);
+    }
+    show('view-group');
+    renderHeatmapGrid(document.getElementById('group-heatmap'), document.getElementById('group-hm-detail'),
+        groupFacts, groupHeatmapOp, GROUP_HEATMAP);
+}
+
+async function loadGroupFacts() {
+    const { data, error } = await sb.rpc('group_facts', { p_group_id: currentGroup.id });
+    if (error) throw error;
+    groupFacts = groupFactsMap(data);
+}
+
+function setGroupHeatmapOp(op, btn) {
+    groupHeatmapOp = op;
+    btn.parentElement.querySelectorAll('button').forEach(b => b.classList.toggle('selected', b === btn));
+    renderHeatmapGrid(document.getElementById('group-heatmap'), document.getElementById('group-hm-detail'),
+        groupFacts, op, GROUP_HEATMAP);
+}
+
+async function loadGroupChildren() {
+    const { data, error } = await sb.rpc('group_children_summary', { p_group_id: currentGroup.id });
+    if (error) throw error;
+    const list = document.getElementById('group-children');
+    list.innerHTML = data.map(c => `
+        <li class="clickable" data-child="${c.child_id}">
+            <span><strong>${esc(c.avatar)} ${esc(c.nickname)}</strong><br>
+                <span class="muted">az elmúlt 7 napban ${c.answers_7d} feladat · összesen ${c.answers_total} ·
+                    utoljára ${esc(c.last_answer ? whenText(c.last_answer) : 'még nem gyakorolt')}</span></span>
+            <span>${c.weak ? `🎯 ${c.weak} gyakorlásra vár` : (c.answers_total ? '🎉 nincs hibás' : '')}</span>
+        </li>`).join('') || '<li class="muted">Még nincs gyerek a csoportban.</li>';
+    list.querySelectorAll('[data-child]').forEach(li => { li.onclick = () => openChild(li.dataset.child); });
+}
+
+function renderAssignTables() {
+    const box = document.getElementById('assign-tables');
+    box.innerHTML = Array.from({ length: 11 }, (_, t) => `<button type="button" data-table="${t}">${t}-${TABLE_SUFFIX[t]}</button>`).join('');
+    box.querySelectorAll('button').forEach(btn => { btn.onclick = () => btn.classList.toggle('selected'); });
+}
+
+// Egy feladat rövid leírása: "7-es, 8-as tábla · osztás · 20 db"
+function assignmentLabel(a) {
+    const tables = a.tables.map(t => `${t}-${TABLE_SUFFIX[t]}`).join(', ');
+    const amount = a.mode === 'exam' ? 'kikérdező, az összes' : (a.question_count ? `gyakorló, ${a.question_count} db` : 'gyakorló, az összes');
+    return `${tables} tábla · ${OP_NAMES[a.op]} · ${amount}`;
+}
+
+async function createAssignment(event) {
+    event.preventDefault();
+    const tables = [...document.querySelectorAll('#assign-tables button.selected')].map(b => +b.dataset.table);
+    if (!tables.length) return toast('Válassz legalább egy táblát!');
+    const mode = document.getElementById('assign-mode').value;
+    const { error } = await sb.rpc('create_assignment', {
+        p_group_id: currentGroup.id,
+        p_op: document.getElementById('assign-op').value,
+        p_tables: tables,
+        p_mode: mode,
+        p_count: mode === 'exam' ? null : Math.max(1, Math.min(242, +document.getElementById('assign-count').value || 20)),
+        p_due: document.getElementById('assign-due').value || null,
+        p_note: document.getElementById('assign-note').value,
+    });
+    if (error) return fail(error);
+    toast('📌 Feladat kiosztva');
+    document.getElementById('assign-note').value = '';
+    renderAssignTables();
+    loadAssignments().catch(fail);
+}
+
+async function loadAssignments() {
+    const [tasksRes, progressRes] = await Promise.all([
+        sb.from('assignments').select('id, op, tables, mode, question_count, due_date, note, created_by, created_at')
+            .eq('group_id', currentGroup.id).order('created_at', { ascending: false }),
+        sb.rpc('assignment_progress', { p_group_id: currentGroup.id }),
+    ]);
+    if (tasksRes.error) throw tasksRes.error;
+    if (progressRes.error) throw progressRes.error;
+    const list = document.getElementById('assignment-list');
+    if (!tasksRes.data.length) {
+        list.innerHTML = '<p class="muted">Még nincs kiosztott feladat.</p>';
+        return;
+    }
+    list.innerHTML = tasksRes.data.map(a => {
+        const rows = progressRes.data.filter(p => p.assignment_id === a.id).sort((x, y) => x.nickname.localeCompare(y.nickname, 'hu'));
+        const done = rows.filter(p => p.done > 0).length;
+        const overdue = a.due_date && new Date(`${a.due_date}T23:59:59`) < new Date();
+        const canDelete = a.created_by === me.id || currentGroup.isOwner;
+        return `
+        <div class="assignment">
+            <div><strong>📌 ${esc(assignmentLabel(a))}</strong>
+                <span class="muted">${a.due_date ? ` · határidő: ${esc(new Date(`${a.due_date}T12:00:00`).toLocaleDateString('hu-HU', { month: 'short', day: 'numeric', weekday: 'short' }))}${overdue ? ' (lejárt)' : ''}` : ''}
+                · kész: ${done}/${rows.length}</span></div>
+            ${a.note ? `<div class="muted">💬 ${esc(a.note)}</div>` : ''}
+            <div class="progress">${rows.map(p => p.done
+                ? `<span class="done">${esc(p.avatar)} ${esc(p.nickname)} ✅ ${p.last_pct}%${p.done > 1 ? ` (${p.done}×, legjobb ${p.best_pct}%)` : ''}</span>`
+                : `<span>${esc(p.avatar)} ${esc(p.nickname)} ${overdue ? '⚠️' : '⏳'}</span>`).join('')}</div>
+            ${canDelete ? `<div><button class="link danger-link" data-del-assignment="${a.id}">feladat törlése</button></div>` : ''}
+        </div>`;
+    }).join('');
+    list.querySelectorAll('[data-del-assignment]').forEach(btn => {
+        btn.onclick = async () => {
+            if (!confirm('Törlöd ezt a feladatot? A gyerekek eddigi eredményei megmaradnak.')) return;
+            const { error } = await sb.from('assignments').delete().eq('id', btn.dataset.delAssignment);
+            if (error) return fail(error);
+            loadAssignments().catch(fail);
+        };
+    });
 }
 
 init().catch(fail);

@@ -25,6 +25,18 @@ Szorzótábla- és bennfoglalás-gyakorló web-app alsósoknak, tabletre és tel
 - **Csoportok:** családot vagy osztályt hoz létre, gyerekeket ad hozzá (csak becenév és avatar), más felnőtteket hív meg.
 - **A gyerek eszközét egy 6 jegyű kód köti össze** a gyerek profiljával. A gyereknek nem kell fiók. Ezután az eredményei minden eszközén közösek, és a felnőttek látják a grafikonját és a feladat-térképét.
 - **Internet nélkül is lehet gyakorolni:** az eredmények megvárják a következő kapcsolatot.
+- **Közös tablet:** több gyerek is használhatja ugyanazt az eszközt. Induláskor „Ki gyakorol most?”, a gyerek-PIN nem kötelező.
+- **Szülő és tanár külön nézet:**
+  - a szülő a gyerekeit látja elöl;
+  - a tanár az osztályait, közös feladat-térképpel. Ezen egy mezőre koppintva látszik, kinek kell még gyakorolnia.
+- **Osztály:**
+  - a tanár csatlakozási kódot ad, a szülő azzal teszi be a gyerekét az osztályba;
+  - a tanár szülőket is meghívhat;
+  - a családi gyerek eszközeit, PIN-jét és törlését továbbra is a család kezeli.
+- **Kiosztott feladatok:**
+  - például „7-es tábla, osztás, 20 db, péntekig”;
+  - a gyerek appjában „📌 Feladat” kártya jelenik meg, egy gombbal indul;
+  - a felnőtt látja, ki teljesítette és hány százalékkal.
 
 ## Adatok
 

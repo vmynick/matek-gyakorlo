@@ -71,6 +71,8 @@ async function migrate(env) {
         await api('POST', `/v1/projects/${PROJECTS[env].ref}/database/migrations`,
             { name, query: fs.readFileSync(path.join(dir, file), 'utf8') });
         count++;
+        // a Supabase a futás másodpercét használja a nyilvántartás kulcsának: egy másodpercen belül kettő ütközne
+        await new Promise((ok) => setTimeout(ok, 1100));
     }
     // Az adatbázis API (PostgREST) frissítse a sémáról tárolt adatait, különben az új függvényeket nem látja
     if (count) await sql(env, "notify pgrst, 'reload schema';");

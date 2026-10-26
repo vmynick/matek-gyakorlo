@@ -750,6 +750,55 @@
             cursor: pointer;
         }
 
+        /* Kiosztott feladat kártya */
+        .assignments {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 18px;
+        }
+
+        .assignments[hidden] {
+            display: none;
+        }
+
+        .assignment-card {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 14px;
+            border: 2px solid var(--warning);
+            border-radius: 14px;
+            background: var(--warn-bg);
+        }
+
+        .assignment-card .text {
+            flex: 1;
+            font-size: 0.9rem;
+            color: var(--text-dark);
+        }
+
+        .assignment-card .text strong {
+            display: block;
+            font-size: 1rem;
+        }
+
+        .assignment-card .due {
+            color: var(--warn-text);
+            font-weight: 700;
+        }
+
+        .assignment-card button {
+            flex: none;
+            padding: 10px 14px;
+            border: none;
+            border-radius: 10px;
+            background: var(--warning);
+            color: white;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
         .child-chip[hidden] {
             display: none;
         }
@@ -928,6 +977,8 @@
         <h1>✨ Szorzótábla Mester</h1>
         <!-- Összekötött eszközön: kié az eszköz (koppintásra a felhő ablak) -->
         <button class="child-chip" id="child-chip" hidden onclick="onChildChipClick()"></button>
+        <!-- Kiosztott feladatok (összekötött eszközön, a szülőtől / tanártól) -->
+        <div class="assignments" id="assignments" hidden></div>
 
         <!-- Üzemmód választás -->
         <div class="mode-selector">
@@ -1212,6 +1263,7 @@
     let questionShownAt = 0; // válaszidő méréséhez
     let firstAnswerMs = null;
     let currentSessionId = null; // a teszt azonosítója (a felhőben a válaszok ehhez tartoznak)
+    let currentAssignmentId = null; // ha kiosztott feladatot csinál
     let inputLocked = false; // válasz után a következő feladatig nem fogad bevitelt (dupla OK ellen)
     let quizRunId = 0; // kilépéskor / új tesztnél a régi időzítők érvénytelenné válnak
     let startTime = null;
@@ -1314,6 +1366,7 @@
 
         // Felhő: összekötött eszköz szinkronja; a szülőtől kapott linkben (?kod=...) érkező kód beírása
         updateCloudUI();
+        renderAssignments();
         askWhoIsPracticing();
         cloudSync();
         window.addEventListener('online', () => cloudSync());
@@ -1491,8 +1544,10 @@
     }
 
     /* --- TESZT GENERÁLÁS ÉS INDÍTÁS --- */
-    function startQuiz() {
+    // assignmentId: ha egy kiosztott feladatot indít a gyerek (a teszt eredménye ehhez kötődik)
+    function startQuiz(assignmentId) {
         playSound('click');
+        currentAssignmentId = typeof assignmentId === 'string' ? assignmentId : null;
 
         // Pakli összeállítása
         let fullDeck;
@@ -1750,8 +1805,13 @@
             bones_used: bonesUsed,
             duration_s: durationSec,
             pct: pct,
-            finished_at: finishedAt.toISOString()
+            finished_at: finishedAt.toISOString(),
+            assignment_id: currentAssignmentId
         });
+        if (currentAssignmentId) {
+            cloudMarkAssignmentDone(currentAssignmentId);
+            renderAssignments();
+        }
 
         // Képernyőváltás
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -2023,7 +2083,7 @@
     }
 
     /* --- VERZIÓ ÉS MEGOSZTÁS --- */
-    const APP_VERSION = '1.4';
+    const APP_VERSION = '1.5';
     const APP_BUILD = 'dev'; // a közzététel (GitHub Actions) írja át a commit rövid azonosítójára
     const APP_URL = 'https://vmynick.github.io/matek-gyakorlo/';
 
@@ -2226,6 +2286,7 @@
     function onCloudSynced() {
         updateCloudUI();
         updateSetupInfo();
+        renderAssignments();
         if (!document.getElementById('profile-overlay').hidden) {
             if (linkedChildren().length > 1) openProfileChooser(); // friss nevek, PIN-ek
             else document.getElementById('profile-overlay').hidden = true;
@@ -2234,6 +2295,75 @@
             renderChart();
             renderHeatmap();
         }
+    }
+
+    /* --- KIOSZTOTT FELADATOK (a szülőtől / tanártól, összekötött eszközön) --- */
+    const OP_NAMES = { mul: 'szorzás', div: 'osztás', mix: 'vegyes' };
+
+    // Hány nap van a határidőig (a határidő napja még belefér); negatív = lejárt
+    function dueDays(dateStr) {
+        const [y, m, d] = dateStr.split('-').map(Number);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return Math.round((new Date(y, m - 1, d) - today) / 86400000);
+    }
+
+    function dueText(dateStr) {
+        const days = dueDays(dateStr);
+        if (days < 0) return 'lejárt, de még megcsinálhatod';
+        if (days === 0) return 'ma';
+        if (days === 1) return 'holnap';
+        const [y, m, d] = dateStr.split('-').map(Number);
+        return new Date(y, m - 1, d).toLocaleDateString('hu-HU', { month: 'short', day: 'numeric', weekday: 'long' });
+    }
+
+    function renderAssignments() {
+        const box = document.getElementById('assignments');
+        const list = linkedChild() ? JSON.parse(localStorage.getItem('szorzo_assignments') || '[]') : [];
+        const open = list.filter(a => !a.done && (!a.due_date || dueDays(a.due_date) >= -7));
+        box.hidden = !open.length;
+        box.innerHTML = '';
+        open.forEach(a => {
+            const card = document.createElement('div');
+            card.className = 'assignment-card';
+            const text = document.createElement('div');
+            text.className = 'text';
+            const title = document.createElement('strong');
+            title.textContent = `📌 Feladat: ${a.tables.map(t => `${t}-${TABLE_SUFFIX[t]}`).join(', ')} tábla`;
+            const details = document.createElement('span');
+            details.textContent = `${OP_NAMES[a.op]} · ${a.mode === 'exam' ? 'kikérdező, az összes' : (a.question_count ? `${a.question_count} db` : 'az összes')}`;
+            text.append(title, details);
+            if (a.due_date) {
+                const due = document.createElement('span');
+                due.className = 'due';
+                due.textContent = ` · határidő: ${dueText(a.due_date)}`;
+                text.append(due);
+            }
+            if (a.note) {
+                const note = document.createElement('div');
+                note.textContent = `💬 ${a.note}`;
+                text.append(note);
+            }
+            const start = document.createElement('button');
+            start.textContent = 'Indítás ▶';
+            start.onclick = () => startAssignment(a);
+            card.append(text, start);
+            box.appendChild(card);
+        });
+    }
+
+    // A feladat beállításai (táblák, művelet, mód, darabszám), aztán indul a teszt a feladathoz kötve
+    function startAssignment(a) {
+        selectedTables = [...a.tables];
+        renderTableSelector();
+        const opIndex = ['mul', 'div', 'mix'].indexOf(a.op);
+        setOp(a.op, document.querySelectorAll('#table-picker .btn-op')[opIndex]);
+        setMode(a.mode === 'exam' ? 'exam' : 'practice');
+        questionCountSetting = a.question_count || 'all';
+        document.querySelectorAll('.btn-count').forEach(b => b.classList.remove('selected'));
+        const countIndex = [10, 20, 30, 'all'].indexOf(questionCountSetting);
+        if (countIndex >= 0) document.querySelectorAll('.btn-count')[countIndex].classList.add('selected');
+        startQuiz(a.id);
     }
 
     // A szülői felületről küldött link (...?kod=ABC234): a kód beírva vár az összekötő ablakban

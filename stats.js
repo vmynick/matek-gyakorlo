@@ -25,13 +25,16 @@ const isWeak = f => /[bx]/.test(f.r) && !f.r.endsWith('oo');
 const factScore = f => [...f.r].reduce((s, c) => s + (c === 'o' ? 1 : c === 'b' ? 0.5 : 0), 0) / f.r.length;
 const avgMs = f => f.ms.length ? f.ms.reduce((a, b) => a + b, 0) / f.ms.length : null;
 
-function heatLevel(f) {
-    const s = factScore(f);
-    return s >= 0.9 ? 4 : s >= 0.7 ? 3 : s >= 0.5 ? 2 : s >= 0.3 ? 1 : 0;
-}
+// 0..1 eredményből szín-szint (0 = nem megy … 4 = biztos)
+const levelOf = s => (s >= 0.9 ? 4 : s >= 0.7 ? 3 : s >= 0.5 ? 2 : s >= 0.3 ? 1 : 0);
+const heatLevel = f => levelOf(factScore(f));
 
-// A feladat-térkép kirajzolása: sor = tábla (osztásnál osztó), oszlop = hányszor (osztásnál hányados)
-function renderHeatmapGrid(grid, detailEl, facts, op) {
+// A feladat-térkép kirajzolása: sor = tábla (osztásnál osztó), oszlop = hányszor (osztásnál hányados).
+// opts (a csoport-összesítéshez): score(f) 0..1, slow(f), detail(q, f) -> HTML
+function renderHeatmapGrid(grid, detailEl, facts, op, opts = {}) {
+    const score = opts.score || factScore;
+    const slow = opts.slow || (f => avgMs(f) > SLOW_MS);
+    const detail = opts.detail || factDetailHtml;
     const isDiv = op === 'div';
     grid.innerHTML = '';
     grid.style.setProperty('--hm-rows', isDiv ? 11 : 12); // a rács méretezéséhez (fejléc + táblák)
@@ -54,30 +57,49 @@ function renderHeatmapGrid(grid, detailEl, facts, op) {
             const q = makeQuestion(op, t, c);
             const f = facts[factKey(q)];
             const cell = document.createElement('button');
-            cell.className = `hm-cell ${f ? 'hm-l' + heatLevel(f) : 'hm-none'}`;
-            if (f && avgMs(f) > SLOW_MS) cell.classList.add('slow');
+            cell.className = `hm-cell ${f ? 'hm-l' + levelOf(score(f)) : 'hm-none'}`;
+            if (f && slow(f)) cell.classList.add('slow');
             cell.innerText = isDiv ? q.f1 : q.target; // osztásnál az osztandó, szorzásnál a szorzat
             cell.title = `${questionText(q)} = ${q.target}`;
-            cell.onclick = () => showFactDetail(grid, detailEl, q, f, cell);
+            cell.onclick = () => {
+                grid.querySelectorAll('.hm-cell.selected').forEach(c => c.classList.remove('selected'));
+                cell.classList.add('selected');
+                detailEl.innerHTML = f ? detail(q, f) : `<strong>${questionText(q)} = ${q.target}</strong><br>Még nem szerepelt.`;
+            };
             grid.appendChild(cell);
         }
     }
 }
 
-function showFactDetail(grid, detailEl, q, f, cell) {
-    grid.querySelectorAll('.hm-cell.selected').forEach(c => c.classList.remove('selected'));
-    cell.classList.add('selected');
-    const title = `<strong>${questionText(q)} = ${q.target}</strong>`;
-    if (!f) {
-        detailEl.innerHTML = `${title}<br>Még nem szerepelt.`;
-        return;
-    }
+const msText = ms => `${(ms / 1000).toFixed(1).replace('.', ',')} mp`;
+const escHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// Egy gyerek egy feladatának részletei
+function factDetailHtml(q, f) {
     const icons = { o: '✅', b: '🦴', x: '❌' };
     const ms = avgMs(f);
-    detailEl.innerHTML = `${title}${isWeak(f) ? ' · 🎯 gyakorlásra vár' : ''}<br>` +
+    return `<strong>${questionText(q)} = ${q.target}</strong>${isWeak(f) ? ' · 🎯 gyakorlásra vár' : ''}<br>` +
         `${f.n} válasz: ✅ ${f.ok} · 🦴 ${f.bone} · ❌ ${f.bad}` +
-        (ms !== null ? ` · átlag ${(ms / 1000).toFixed(1).replace('.', ',')} mp` : '') +
+        (ms !== null ? ` · átlag ${msText(ms)}` : '') +
         `<br>Legutóbbiak: ${[...f.r].map(c => icons[c]).join(' ')}`;
+}
+
+// Csoport-összesítés egy feladatra (group_facts sor): hány gyerek gyakorolta, kinek kell még
+const GROUP_HEATMAP = {
+    score: f => f.avg_score,
+    slow: f => f.avg_ms != null && f.avg_ms > SLOW_MS,
+    detail: (q, f) => `<strong>${questionText(q)} = ${q.target}</strong> · ${f.kids} gyerek gyakorolta` +
+        (f.avg_ms != null ? ` · átlag ${msText(f.avg_ms)}` : '') + '<br>' +
+        (f.weak_kids.length
+            ? `🎯 Gyakorolnia kell: ${f.weak_kids.map(k => `${escHtml(k.avatar)} ${escHtml(k.nickname)}`).join(', ')}`
+            : '🎉 Mindenkinek megy, aki gyakorolta.'),
+};
+
+// group_facts sorai -> { "mul:7:8": {...} }
+function groupFactsMap(rows) {
+    const facts = {};
+    for (const f of rows || []) facts[`${f.op}:${f.tbl}:${f.other}`] = { ...f, avg_score: Number(f.avg_score) };
+    return facts;
 }
 
 // Fejlődés grafikon a tesztek százalékaiból (history: [{ date, pct, mode }]). A régit lecseréli.

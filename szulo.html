@@ -225,6 +225,141 @@
             font-size: 0.85rem;
         }
 
+        /* Szülő / tanár / admin fülek */
+        .mode-tabs {
+            display: flex;
+            gap: 6px;
+            padding: 6px;
+            border-radius: 14px;
+            background: var(--card-bg);
+            box-shadow: 0 10px 20px -8px rgba(0, 0, 0, 0.15);
+        }
+
+        .mode-tabs button {
+            flex: 1;
+            padding: 10px 6px;
+            border: none;
+            border-radius: 10px;
+            background: transparent;
+            color: var(--text-muted);
+            font-weight: 700;
+            font-size: 0.95rem;
+            cursor: pointer;
+        }
+
+        .mode-tabs button.active {
+            background: var(--selected-bg);
+            color: var(--primary-text);
+        }
+
+        /* Szülő: nagy gyerek-kártyák */
+        .kid-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 10px;
+        }
+
+        .kid-card {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            grid-template-rows: auto auto;
+            column-gap: 12px;
+            align-items: center;
+            padding: 14px;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            background: var(--surface);
+            color: var(--text-dark);
+            text-align: left;
+            cursor: pointer;
+        }
+
+        .kid-card .kid-avatar {
+            grid-row: span 2;
+            font-size: 2.6rem;
+        }
+
+        .kid-card .kid-name {
+            font-size: 1.2rem;
+            font-weight: 800;
+        }
+
+        .kid-card .kid-meta {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        /* Tanár: osztály összegzés */
+        .class-summary {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        .assign-form {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .table-picks {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(54px, 1fr));
+            gap: 6px;
+        }
+
+        .table-picks button {
+            padding: 8px 4px;
+            border: 1px solid var(--border-strong);
+            border-radius: 8px;
+            background: var(--raised);
+            color: var(--text-dark);
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .table-picks button.selected {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: white;
+        }
+
+        .assignment {
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 10px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .assignment .progress {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            font-size: 0.85rem;
+        }
+
+        .assignment .progress span {
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: var(--surface-2);
+        }
+
+        .assignment .progress span.done {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        :root[data-theme="dark"] .assignment .progress span.done {
+            background: #064e3b;
+            color: #a7f3d0;
+        }
+
+        .clickable {
+            cursor: pointer;
+        }
+
         .group-actions {
             font-size: 0.85rem;
             gap: 12px;
@@ -354,7 +489,7 @@
 <div class="console">
     <header class="console-head">
         <a href="./">← Gyakorlás</a>
-        <h1>👨‍👩‍👧 Szülői / tanári felület</h1>
+        <h1 id="console-title">👨‍👩‍👧 Szülői / tanári felület</h1>
         <div class="who" id="who" hidden>
             <span id="who-email"></span>
             <button class="link" onclick="logout()">Kijelentkezés</button>
@@ -380,19 +515,34 @@
         <button class="btn secondary" onclick="logout()">Kijelentkezés</button>
     </section>
 
-    <!-- Kezdőlap: csoportok, gyerekek, meghívások -->
-    <div id="view-home" hidden>
-        <div class="console" id="groups"></div>
+    <!-- Kezdőlap: a szülőnek a gyerekei, a tanárnak az osztályai; akinek több is van, füllel vált -->
+    <div class="console" id="view-home" hidden>
+        <nav class="mode-tabs" id="mode-tabs" hidden>
+            <button data-mode="family" onclick="setConsoleMode('family')">🏠 Családom</button>
+            <button data-mode="class" onclick="setConsoleMode('class')">🏫 Osztályaim</button>
+            <button data-mode="admin" onclick="setConsoleMode('admin')">🛡️ Admin</button>
+        </nav>
+
+        <!-- Szülő: a gyerekei elöl, a család beállításai alatta -->
+        <div class="console" id="home-family">
+            <section class="card">
+                <h2>👧 Gyerekeim</h2>
+                <div class="kid-cards" id="my-children"></div>
+            </section>
+            <div class="console" id="family-groups"></div>
+        </div>
+
+        <!-- Tanár: az osztályai összesítéssel -->
+        <div class="console" id="home-class">
+            <div class="console" id="class-groups"></div>
+        </div>
 
         <section class="card" id="new-group-card" hidden>
-            <h2>➕ Új csoport</h2>
-            <p class="muted">Család (a saját gyerekeidnek) vagy osztály (tanárként).</p>
+            <h2 id="new-group-title">➕ Új család</h2>
+            <p class="muted" id="new-group-help"></p>
             <form onsubmit="createGroup(event)">
-                <input id="group-name" required maxlength="60" placeholder="pl. Kovács család vagy 3.b">
-                <select id="group-kind">
-                    <option value="family">🏠 Család</option>
-                    <option value="class">🏫 Osztály</option>
-                </select>
+                <input id="group-name" required maxlength="60">
+                <input type="hidden" id="group-kind" value="family">
                 <button class="btn">Létrehozás</button>
             </form>
         </section>
@@ -425,12 +575,73 @@
         </section>
     </div>
 
+    <!-- Egy csoport együtt: összesített térkép, gyerekek, kiosztott feladatok -->
+    <div class="console" id="view-group" hidden>
+        <div><button class="link" onclick="showHome()">← Vissza a csoportokhoz</button></div>
+        <section class="card">
+            <div class="child-head"><span id="group-icon"></span><span id="group-title"></span></div>
+        </section>
+
+        <section class="card">
+            <h2>🗺️ Melyik feladat megy a csoportnak?</h2>
+            <p class="muted">A szín a gyerekek átlaga. Koppints egy mezőre: látszik, kinek kell még gyakorolnia.</p>
+            <div class="heatmap-card">
+                <div class="op-toggle">
+                    <button class="selected" onclick="setGroupHeatmapOp('mul', this)"><b>×</b> Szorzás</button>
+                    <button onclick="setGroupHeatmapOp('div', this)">➗ Osztás</button>
+                </div>
+                <div class="heatmap-wrap"><div class="heatmap" id="group-heatmap"></div></div>
+                <div class="hm-legend">
+                    <span>nem megy <i class="hm-l0"></i><i class="hm-l1"></i><i class="hm-l2"></i><i class="hm-l3"></i><i class="hm-l4"></i> biztos</span>
+                    <span><i class="hm-none"></i> még senki</span>
+                    <span title="átlagosan 6 másodpercnél lassabb válasz"><i class="hm-slow-dot"></i> lassú</span>
+                </div>
+                <div class="hm-detail" id="group-hm-detail"></div>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>👧 Gyerekek</h2>
+            <ul class="members" id="group-children"></ul>
+        </section>
+
+        <section class="card">
+            <h2>📌 Kiosztott feladatok</h2>
+            <details id="assign-box">
+                <summary>➕ Új feladat kiosztása</summary>
+                <form class="assign-form" onsubmit="createAssignment(event)">
+                    <p class="muted">Táblák:</p>
+                    <div class="table-picks" id="assign-tables"></div>
+                    <div class="row">
+                        <select id="assign-op" aria-label="Művelet">
+                            <option value="mul">× Szorzás</option>
+                            <option value="div">➗ Osztás</option>
+                            <option value="mix">🔀 Vegyes</option>
+                        </select>
+                        <select id="assign-mode" aria-label="Mód"
+                                onchange="document.getElementById('assign-count').hidden = this.value === 'exam'">
+                            <option value="practice">🎈 Gyakorló (csontokkal)</option>
+                            <option value="exam">👨‍👩‍👧 Kikérdező (az összes, csont nélkül)</option>
+                        </select>
+                        <input type="number" id="assign-count" min="1" max="242" value="20" aria-label="Feladatok száma" title="Feladatok száma">
+                    </div>
+                    <div class="row">
+                        <label class="muted">Határidő: <input type="date" id="assign-due"></label>
+                        <input id="assign-note" maxlength="120" placeholder="Üzenet a gyerekeknek (nem kötelező)">
+                    </div>
+                    <div class="row"><button class="btn">📌 Kiosztás</button></div>
+                </form>
+            </details>
+            <div id="assignment-list"></div>
+        </section>
+    </div>
+
     <!-- Egy gyerek: statisztika, eszközök, kód -->
     <div class="console" id="view-child" hidden>
         <div><button class="link" onclick="showHome()">← Vissza a csoportokhoz</button></div>
         <section class="card">
             <div class="child-head"><span id="child-avatar"></span><span id="child-name"></span></div>
-            <details>
+            <details id="child-edit-box">
                 <summary>✏️ Név és avatar módosítása</summary>
                 <form class="row" onsubmit="saveChild(event)">
                     <input id="edit-nickname" maxlength="30" required placeholder="Becenév">
@@ -449,7 +660,7 @@
                 <button class="btn">➕ Hozzáadás</button>
                 <button class="btn secondary" type="button" id="child-move-btn" onclick="moveChildToGroup()">➡️ Áthelyezés ide</button>
             </form>
-            <details>
+            <details id="child-join-box">
                 <summary>🏫 Csatlakozás osztályhoz kóddal</summary>
                 <p class="muted">A tanártól kapott 6 jegyű kóddal a gyerek az osztályba is bekerül. Az osztály tanárai látni fogják a gyerek eredményeit; te nem látod a többi gyereket, és ők sem látják a családodat.</p>
                 <form class="row" onsubmit="joinClass(event)">
@@ -484,7 +695,7 @@
             </div>
         </section>
 
-        <section class="card">
+        <section class="card" id="child-devices-card">
             <h2>📱 Eszközök</h2>
             <p class="muted">A gyerek eszközén: Szorzótábla Mester → lent „☁️ Eszköz összekötése” → kód beírása. Egy kód 24 óráig érvényes és egyszer használható.</p>
             <ul class="members" id="device-list"></ul>
@@ -500,7 +711,12 @@
             </div>
         </section>
 
-        <section class="card">
+        <section class="card" id="child-assignments-card" hidden>
+            <h2>📌 Kiosztott feladatok</h2>
+            <ul class="members" id="child-assignments"></ul>
+        </section>
+
+        <section class="card" id="child-pin-card">
             <h2>🔒 Gyerek-PIN</h2>
             <p class="muted">Közös tableten hasznos: a gyerek induláskor a PIN-jével választja ki magát, így a testvérek nem gyakorolnak egymás nevében. Nem kötelező. A gyerek eszközén a következő szinkronnál érvényes.</p>
             <p class="msg" id="pin-status"></p>
@@ -512,10 +728,10 @@
             </form>
         </section>
 
-        <section class="card">
+        <section class="card" id="child-danger-card">
             <h2>⚠️ Törlés</h2>
             <div class="row">
-                <button class="btn danger" onclick="clearChildStats()">Statisztika törlése</button>
+                <button class="btn danger" id="clear-stats-btn" onclick="clearChildStats()">Statisztika törlése</button>
                 <button class="btn danger" id="delete-child-btn" onclick="deleteChild()">Gyerek törlése</button>
             </div>
         </section>
