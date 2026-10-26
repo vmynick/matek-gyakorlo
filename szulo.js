@@ -138,7 +138,7 @@ async function loadHome() {
     const { data, error: groupError } = await sb.from('groups').select(`
         id, name, kind,
         group_members ( adult_id, role, adults ( email ) ),
-        child_groups ( children ( id, nickname, avatar, child_devices ( last_seen ) ) )`).order('created_at');
+        child_groups ( children ( id, nickname, avatar, pin_hash, child_devices ( last_seen ) ) )`).order('created_at');
     if (groupError) return fail(groupError);
     groups = data;
     renderHome();
@@ -304,9 +304,10 @@ async function openChild(id) {
     const inGroups = groups.filter(g => g.child_groups.some(cg => cg.children && cg.children.id === id));
     const child = inGroups[0].child_groups.find(cg => cg.children && cg.children.id === id).children;
     currentChild = {
-        id, nickname: child.nickname, avatar: child.avatar, history: [],
+        id, nickname: child.nickname, avatar: child.avatar, history: [], hasPin: !!child.pin_hash,
         owner: inGroups.some(g => g.group_members.some(m => m.adult_id === me.id && m.role === 'owner')),
     };
+    renderPinStatus();
     lastCode = null;
     show('loading');
     document.getElementById('child-avatar').innerText = child.avatar;
@@ -363,8 +364,10 @@ async function loadDevices() {
         || '<li class="muted">Még nincs összekötött eszköz.</li>';
     list.querySelectorAll('button').forEach(btn => {
         btn.onclick = async () => {
-            if (!confirm('Leválasztod ezt az eszközt? Az eddigi eredmények megmaradnak.')) return;
-            const { error: delError } = await sb.from('child_devices').delete().eq('user_id', btn.dataset.user);
+            if (!confirm(`Leválasztod ezt az eszközt ${currentChild.nickname} profiljáról? Az eddigi eredmények megmaradnak.`)) return;
+            // csak ennek a gyereknek a kapcsolata: közös tableten a többi gyerek összekötve marad
+            const { error: delError } = await sb.from('child_devices').delete()
+                .eq('user_id', btn.dataset.user).eq('child_id', currentChild.id);
             if (delError) return fail(delError);
             toast('📱 Eszköz leválasztva');
             loadDevices().catch(fail);
@@ -399,6 +402,34 @@ async function shareDeviceCode() {
     } catch (e) {
         toast(url);
     }
+}
+
+/* ---------- Gyerek-PIN (közös tableten a testvérek ne egymás nevében gyakoroljanak) ---------- */
+
+function renderPinStatus() {
+    setMsg('pin-status', currentChild.hasPin ? 'ok' : '',
+        currentChild.hasPin ? '🔒 Be van kapcsolva: a gyerek a PIN-jével választja ki magát.' : 'Nincs PIN: elég az avatarra koppintani.');
+    document.getElementById('pin-remove-btn').hidden = !currentChild.hasPin;
+    document.getElementById('child-pin').value = '';
+}
+
+async function setChildPin(event) {
+    event.preventDefault();
+    const pin = document.getElementById('child-pin').value.trim();
+    if (!/^[0-9]{4}$/.test(pin)) return toast('A PIN pontosan 4 számjegy');
+    const { error } = await sb.rpc('set_child_pin', { p_child_id: currentChild.id, p_pin: pin });
+    if (error) return fail(error);
+    currentChild.hasPin = true;
+    renderPinStatus();
+    toast(`🔒 ${currentChild.nickname} PIN-je beállítva`);
+}
+
+async function removeChildPin() {
+    const { error } = await sb.rpc('set_child_pin', { p_child_id: currentChild.id, p_pin: null });
+    if (error) return fail(error);
+    currentChild.hasPin = false;
+    renderPinStatus();
+    toast(`🔓 ${currentChild.nickname} PIN-je kikapcsolva`);
 }
 
 async function clearChildStats() {

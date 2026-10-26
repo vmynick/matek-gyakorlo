@@ -1,11 +1,18 @@
 /* Szorzótábla Mester – felhő a gyerek eszközén: összekötés eszköz-kóddal és az eredmények szinkronja.
    Összekötés nélkül minden ugyanúgy működik, csak helyben. Összekötés után az eredmények a gyerekhez
    kerülnek: minden eszközén közösek, és a szülő / tanár is látja őket. Internet nélkül az eredmények
-   sorban várnak (szorzo_outbox), és a következő kapcsolatkor feltöltődnek. */
+   sorban várnak (szorzo_outbox), és a következő kapcsolatkor feltöltődnek.
 
-const CLOUD_CHILD_KEY = 'szorzo_child'; // { id, nickname, avatar }
+   Egy eszközt több gyerek is használhat (közös tablet): mindegyiket a saját kódjával kötik össze, és
+   induláskor a gyerek kiválasztja magát. A gyakorló app mindig a közös kulcsokat olvassa
+   (szorzo_facts, szorzo_history): ezekben az éppen gyakorló gyerek adatai vannak, a többieké
+   gyerekenként félretéve (szorzo_facts:<id>, szorzo_history:<id>). */
+
+const CLOUD_CHILDREN_KEY = 'szorzo_children'; // [{ id, nickname, avatar, pin_hash }]
+const CLOUD_ACTIVE_KEY = 'szorzo_active_child'; // az éppen gyakorló gyerek azonosítója
 const CLOUD_OUTBOX_KEY = 'szorzo_outbox'; // { answers: [], sessions: [] }
 const CLOUD_SYNC_KEY = 'szorzo_last_sync';
+const CHILD_CACHE_KEYS = ['szorzo_facts', 'szorzo_history'];
 const CLOUD_UPLOAD_BATCH = 200;
 
 let cloudClient = null;
@@ -33,8 +40,46 @@ function cloudWrite(key, value) {
     localStorage.setItem(key, JSON.stringify(value));
 }
 
-const linkedChild = () => cloudRead(CLOUD_CHILD_KEY, null);
 const cloudOutbox = () => cloudRead(CLOUD_OUTBOX_KEY, { answers: [], sessions: [] });
+
+// Az eszközhöz kötött gyerekek (az 1.2-es, egy gyerekes formátumot átalakítja)
+function linkedChildren() {
+    const old = cloudRead('szorzo_child', null);
+    if (old) {
+        cloudWrite(CLOUD_CHILDREN_KEY, [old]);
+        cloudWrite(CLOUD_ACTIVE_KEY, old.id);
+        localStorage.removeItem('szorzo_child');
+    }
+    return cloudRead(CLOUD_CHILDREN_KEY, []);
+}
+
+// Az éppen gyakorló gyerek (vagy null, ha az eszköz nincs összekötve)
+function linkedChild() {
+    const children = linkedChildren();
+    const activeId = cloudRead(CLOUD_ACTIVE_KEY, null);
+    return children.find(c => c.id === activeId) || null;
+}
+
+// Gyerekváltás: a mostani gyerek helyi adatai félre, az új gyereké elő
+function selectChild(id) {
+    const active = cloudRead(CLOUD_ACTIVE_KEY, null);
+    if (active === id) return;
+    if (active) {
+        CHILD_CACHE_KEYS.forEach(k => {
+            const v = localStorage.getItem(k);
+            if (v === null) localStorage.removeItem(`${k}:${active}`);
+            else localStorage.setItem(`${k}:${active}`, v);
+        });
+    }
+    CHILD_CACHE_KEYS.forEach(k => {
+        const v = id ? localStorage.getItem(`${k}:${id}`) : null;
+        if (v === null) localStorage.removeItem(k);
+        else localStorage.setItem(k, v);
+        if (id) localStorage.removeItem(`${k}:${id}`);
+    });
+    if (id) cloudWrite(CLOUD_ACTIVE_KEY, id);
+    else localStorage.removeItem(CLOUD_ACTIVE_KEY);
+}
 
 function newId() {
     if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -45,12 +90,21 @@ function newId() {
     return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-// Egy megválaszolt feladat sorba állítása (csak összekötött eszközön)
+// A gyerek-PIN ellenőrzése az eszközön (internet nélkül is): sha256("<gyerek azonosító>:<PIN>")
+async function childPinMatches(child, pin) {
+    const bytes = new TextEncoder().encode(`${child.id}:${pin}`);
+    const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))]
+        .map(x => x.toString(16).padStart(2, '0')).join('');
+    return hash === child.pin_hash;
+}
+
+// Egy megválaszolt feladat sorba állítása (csak összekötött eszközön, az éppen gyakorló gyereknek)
 function cloudQueueAnswer(q, outcome, ms, mode, sessionId) {
-    if (!linkedChild()) return;
+    const child = linkedChild();
+    if (!child) return;
     const box = cloudOutbox();
     box.answers.push({
-        id: newId(), op: q.op, tbl: q.table, other: q.other, outcome,
+        id: newId(), child_id: child.id, op: q.op, tbl: q.table, other: q.other, outcome,
         ms: ms == null ? null : Math.round(ms), mode, session_id: sessionId,
         answered_at: new Date().toISOString(),
     });
@@ -59,18 +113,18 @@ function cloudQueueAnswer(q, outcome, ms, mode, sessionId) {
 
 // Egy befejezett teszt összesítője, utána rögtön szinkron
 function cloudQueueSession(session) {
-    if (!linkedChild()) return;
+    const child = linkedChild();
+    if (!child) return;
     const box = cloudOutbox();
-    box.sessions.push(session);
+    box.sessions.push({ child_id: child.id, ...session });
     cloudWrite(CLOUD_OUTBOX_KEY, box);
     cloudSync();
 }
 
-// Feltöltés, majd a gyerek összesített statisztikájának letöltése (minden eszközéről).
+// Feltöltés, majd az éppen gyakorló gyerek összesített statisztikájának letöltése (minden eszközéről).
 // Visszatérés: true = sikerült, false = nincs összekötve / nincs internet / hiba.
 function cloudSync() {
-    const child = linkedChild();
-    if (!child || !navigator.onLine || !cloud()) return Promise.resolve(false);
+    if (!linkedChildren().length || !navigator.onLine || !cloud()) return Promise.resolve(false);
     if (cloudSyncing) return cloudSyncing;
     cloudSyncing = (async () => {
         try {
@@ -79,38 +133,52 @@ function cloudSync() {
                 cloudForget('Az eszköz kapcsolata megszűnt. Kérj új kódot a szülőtől vagy a tanártól!');
                 return false;
             }
-            // Össze van-e még kötve? (a szülő leválaszthatta az eszközt)
-            const { data: link, error: linkError } = await cloud().from('child_devices')
-                .select('child_id').eq('user_id', session.user.id).maybeSingle();
+            // Mely gyerekekhez van még kötve? (a szülő leválaszthatta az eszközt)
+            const { data: links, error: linkError } = await cloud().from('child_devices')
+                .select('child_id').eq('user_id', session.user.id);
             if (linkError) throw linkError;
-            if (!link || link.child_id !== child.id) {
-                cloudForget('A szülő vagy a tanár leválasztotta ezt az eszközt.');
+            const linkedIds = new Set(links.map(l => l.child_id));
+            const removed = linkedChildren().filter(c => !linkedIds.has(c.id));
+            removed.forEach(c => cloudRemoveChildLocally(c.id));
+            if (removed.length && typeof showToast === 'function') {
+                showToast(`☁️ Leválasztva erről az eszközről: ${removed.map(c => c.nickname).join(', ')}`);
+            }
+            if (!linkedChildren().length) {
+                await cloud().auth.signOut();
                 return false;
             }
 
+            // Feltöltés (az 1.2-es sorban még nincs gyerek: az akkori egyetlen gyereké)
+            const fallbackChild = cloudRead(CLOUD_ACTIVE_KEY, null);
             const box = cloudOutbox();
+            const forLinked = rows => rows.map(r => ({ ...r, child_id: r.child_id || fallbackChild }))
+                .filter(r => linkedIds.has(r.child_id));
+            const answers = forLinked(box.answers);
+            const sessions = forLinked(box.sessions);
             const sentAnswers = new Set();
             const sentSessions = new Set();
-            for (let i = 0; i < box.answers.length; i += CLOUD_UPLOAD_BATCH) {
-                const rows = box.answers.slice(i, i + CLOUD_UPLOAD_BATCH).map(a => ({ ...a, child_id: child.id }));
+            for (let i = 0; i < answers.length; i += CLOUD_UPLOAD_BATCH) {
+                const rows = answers.slice(i, i + CLOUD_UPLOAD_BATCH);
                 const { error } = await cloud().from('answers').upsert(rows, { onConflict: 'id', ignoreDuplicates: true });
                 if (error) throw error;
                 rows.forEach(r => sentAnswers.add(r.id));
             }
-            if (box.sessions.length) {
-                const rows = box.sessions.map(s => ({ ...s, child_id: child.id }));
-                const { error } = await cloud().from('quiz_sessions').upsert(rows, { onConflict: 'id', ignoreDuplicates: true });
+            if (sessions.length) {
+                const { error } = await cloud().from('quiz_sessions').upsert(sessions, { onConflict: 'id', ignoreDuplicates: true });
                 if (error) throw error;
-                rows.forEach(r => sentSessions.add(r.id));
+                sessions.forEach(r => sentSessions.add(r.id));
             }
-            // Közben érkezhetett új eredmény: csak a feltöltötteket vesszük ki a sorból
+            // Közben érkezhetett új eredmény: csak a feltöltötteket (és a leválasztott gyerekekét) vesszük ki
             const rest = cloudOutbox();
-            rest.answers = rest.answers.filter(a => !sentAnswers.has(a.id));
-            rest.sessions = rest.sessions.filter(s => !sentSessions.has(s.id));
+            const keep = (r, sent) => !sent.has(r.id) && linkedIds.has(r.child_id || fallbackChild);
+            rest.answers = rest.answers.filter(a => keep(a, sentAnswers));
+            rest.sessions = rest.sessions.filter(s => keep(s, sentSessions));
             cloudWrite(CLOUD_OUTBOX_KEY, rest);
 
             await cloud().rpc('touch_device');
-            if (!rest.answers.length) await cloudPull(child.id);
+            await cloudRefreshChildren([...linkedIds]);
+            const active = linkedChild();
+            if (active && !rest.answers.some(a => a.child_id === active.id)) await cloudPull(active.id);
             localStorage.setItem(CLOUD_SYNC_KEY, new Date().toISOString());
             return true;
         } catch (e) {
@@ -124,16 +192,24 @@ function cloudSync() {
     return cloudSyncing;
 }
 
+// A gyerekek neve, avatarja és PIN-je (a szülő módosíthatta)
+async function cloudRefreshChildren(ids) {
+    const { data, error } = await cloud().from('children').select('id, nickname, avatar, pin_hash').in('id', ids);
+    if (error) throw error;
+    const fresh = new Map(data.map(c => [c.id, c]));
+    cloudWrite(CLOUD_CHILDREN_KEY, linkedChildren().map(c => fresh.get(c.id) || c));
+}
+
 // A felhőben lévő összesítés lesz a helyi statisztika (feladat-térkép, hibák gyakorlása, grafikon)
 async function cloudPull(childId) {
     const { data: facts, error } = await cloud().rpc('child_facts', { p_child_id: childId });
     if (error) throw error;
-    cloudWrite('szorzo_facts', factsFromCloud(facts));
-
     const { data: sessions, error: sessionError } = await cloud().from('quiz_sessions')
         .select('pct, mode, finished_at').eq('child_id', childId)
         .order('finished_at', { ascending: false }).limit(20);
     if (sessionError) throw sessionError;
+    if (cloudRead(CLOUD_ACTIVE_KEY, null) !== childId) return; // közben gyereket váltottak
+    cloudWrite('szorzo_facts', factsFromCloud(facts));
     cloudWrite('szorzo_history', historyFromCloud(sessions));
 }
 
@@ -158,7 +234,8 @@ function historyFromCloud(rows) {
     }));
 }
 
-// Összekötés a szülőtől / tanártól kapott kóddal. importLocal: az eszközön eddig gyűjtött eredmények is átkerülnek.
+// Összekötés a szülőtől / tanártól kapott kóddal (további gyerek is köthető ugyanahhoz az eszközhöz).
+// importLocal: az összekötés előtt az eszközön gyűjtött eredmények is az első gyerekhez kerülnek.
 async function cloudLink(code, importLocal) {
     if (!navigator.onLine || !cloud()) throw new Error('Nincs internet. Próbáld újra, ha lesz kapcsolat!');
     const { data: { session } } = await cloud().auth.getSession();
@@ -170,16 +247,24 @@ async function cloudLink(code, importLocal) {
     if (error) throw new Error(error.message);
     if (data && data.error) throw new Error(data.error);
 
-    const previous = linkedChild();
-    if (previous && previous.id !== data.id) cloudClearLocal(); // másik gyerekhez köt: a régi adatai ne keveredjenek
-    cloudWrite(CLOUD_CHILD_KEY, { id: data.id, nickname: data.nickname, avatar: data.avatar });
-    if (importLocal && !previous) cloudImportLocal();
+    const children = linkedChildren();
+    const first = !children.length;
+    const child = { id: data.id, nickname: data.nickname, avatar: data.avatar, pin_hash: data.pin_hash || null };
+    cloudWrite(CLOUD_CHILDREN_KEY, [...children.filter(c => c.id !== child.id), child]);
+    if (first) {
+        // az eddigi helyi adatok ennek a gyereknek az adatai lesznek (ha átvesszük), különben tiszta lap
+        if (!importLocal) CHILD_CACHE_KEYS.forEach(k => localStorage.removeItem(k));
+        cloudWrite(CLOUD_ACTIVE_KEY, child.id);
+        if (importLocal) cloudImportLocal(child.id);
+    } else {
+        selectChild(child.id);
+    }
     await cloudSync();
-    return data;
+    return child;
 }
 
 // Az összekötés előtt helyben gyűjtött eredmények sorba állítása (feladatonként a legutóbbi 5 válasz és a tesztek)
-function cloudImportLocal() {
+function cloudImportLocal(childId) {
     const facts = cloudRead('szorzo_facts', {});
     const history = cloudRead('szorzo_history', []);
     const box = cloudOutbox();
@@ -193,7 +278,7 @@ function cloudImportLocal() {
             // az elsőre jó válaszok ideje a legutóbbiakhoz tartozik: hátulról osztjuk ki
             const ms = outcome === 'o' && times.length ? times.splice(-1, 1)[0] : null;
             box.answers.push({
-                id: newId(), op, tbl: +tbl, other: +other, outcome, ms, mode: null, session_id: null,
+                id: newId(), child_id: childId, op, tbl: +tbl, other: +other, outcome, ms, mode: null, session_id: null,
                 answered_at: new Date(now - (outcomes.length - i) * 1000).toISOString(), imported: true,
             });
         });
@@ -201,33 +286,52 @@ function cloudImportLocal() {
     history.forEach((h, i) => {
         const at = h.at ? new Date(h.at) : new Date(now - (history.length - i) * 60000);
         box.sessions.push({
-            id: newId(), mode: ['practice', 'exam', 'weak'].includes(h.mode) ? h.mode : 'practice',
+            id: newId(), child_id: childId, mode: ['practice', 'exam', 'weak'].includes(h.mode) ? h.mode : 'practice',
             pct: h.pct, finished_at: (isNaN(at) ? new Date(now) : at).toISOString(), imported: true,
         });
     });
     cloudWrite(CLOUD_OUTBOX_KEY, box);
 }
 
-// Kapcsolat bontása: az eszköz leválik a gyerekről (a felhőben lévő adatai megmaradnak)
-async function cloudUnlink() {
+// Egy gyerek leválasztása erről az eszközről (a felhőben lévő eredményei megmaradnak)
+async function cloudUnlink(childId) {
     try {
         await cloudSync(); // ami még nem ment fel, előbb felmegy
         const { data: { session } } = await cloud().auth.getSession();
-        if (session) await cloud().from('child_devices').delete().eq('user_id', session.user.id);
-        await cloud().auth.signOut();
+        if (session) await cloud().from('child_devices').delete().eq('user_id', session.user.id).eq('child_id', childId);
+        if (linkedChildren().length <= 1 && session) await cloud().auth.signOut();
     } catch (e) {
         console.warn('Leválasztási hiba:', e);
     }
-    cloudForget();
+    cloudRemoveChildLocally(childId);
 }
 
-// Az összekötés helyi nyomainak törlése (a gyerek statisztikája a felhőben marad)
+// A gyerek helyi nyomainak törlése erről az eszközről; ha ő gyakorolt, egy másik gyerek (vagy senki) jön
+function cloudRemoveChildLocally(childId) {
+    const rest = linkedChildren().filter(c => c.id !== childId);
+    CHILD_CACHE_KEYS.forEach(k => localStorage.removeItem(`${k}:${childId}`));
+    const box = cloudOutbox();
+    box.answers = box.answers.filter(a => a.child_id && a.child_id !== childId);
+    box.sessions = box.sessions.filter(s => s.child_id && s.child_id !== childId);
+    cloudWrite(CLOUD_OUTBOX_KEY, box);
+    if (cloudRead(CLOUD_ACTIVE_KEY, null) === childId) {
+        CHILD_CACHE_KEYS.forEach(k => localStorage.removeItem(k));
+        localStorage.removeItem(CLOUD_ACTIVE_KEY);
+        if (rest.length) {
+            cloudWrite(CLOUD_CHILDREN_KEY, rest);
+            selectChild(rest[0].id);
+        }
+    }
+    if (rest.length) {
+        cloudWrite(CLOUD_CHILDREN_KEY, rest);
+    } else {
+        [CLOUD_CHILDREN_KEY, CLOUD_ACTIVE_KEY, CLOUD_OUTBOX_KEY, CLOUD_SYNC_KEY].forEach(k => localStorage.removeItem(k));
+    }
+}
+
+// Minden összekötés helyi nyomának törlése (a gyerekek statisztikája a felhőben marad)
 function cloudForget(reason) {
-    cloudClearLocal();
-    localStorage.removeItem(CLOUD_CHILD_KEY);
+    linkedChildren().forEach(c => cloudRemoveChildLocally(c.id));
+    CHILD_CACHE_KEYS.forEach(k => localStorage.removeItem(k));
     if (reason && typeof showToast === 'function') showToast(`☁️ ${reason}`);
-}
-
-function cloudClearLocal() {
-    [CLOUD_OUTBOX_KEY, CLOUD_SYNC_KEY, 'szorzo_facts', 'szorzo_history'].forEach(k => localStorage.removeItem(k));
 }

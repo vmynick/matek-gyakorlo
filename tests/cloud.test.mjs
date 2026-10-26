@@ -102,6 +102,8 @@ async function newContext(browser) {
     const page = await context.newPage();
     page.errors = [];
     page.on('pageerror', (e) => page.errors.push(e.message));
+    page.logs = [];
+    page.on('console', (m) => { if (['warning', 'error'].includes(m.type())) page.logs.push(m.text()); });
     page.on('dialog', (d) => d.accept());
     await page.addInitScript(() => { if (!localStorage.getItem('szorzo_sound')) localStorage.setItem('szorzo_sound', '0'); });
     return page;
@@ -198,6 +200,64 @@ async function main() {
         await shot(parent, '3-statisztika');
     });
 
+    await test('Közös tablet: második gyerek, "Ki gyakorol most?", gyerek-PIN', async (expect) => {
+        // A szülő Borinak PIN-t ad, és felveszi Petit
+        await parent.fill('#child-pin', '1234');
+        await parent.locator('button', { hasText: 'PIN beállítása' }).click();
+        await parent.locator('#pin-status', { hasText: 'Be van kapcsolva' }).waitFor({ timeout: 10000 });
+        await parent.locator('button', { hasText: 'Vissza a csoportokhoz' }).click();
+        await parent.locator('summary', { hasText: 'Gyerek hozzáadása' }).click();
+        await parent.locator('.avatars button', { hasText: '🐯' }).click();
+        await parent.fill('.add-child input[name=nickname]', 'Peti');
+        await parent.locator('.add-child .btn').click();
+        await parent.locator('.child-btn', { hasText: 'Peti' }).click();
+        await parent.locator('#view-child').waitFor({ state: 'visible' });
+        await parent.locator('button', { hasText: 'Új eszköz-kód' }).click();
+        await parent.locator('#code-box').waitFor({ state: 'visible', timeout: 10000 });
+        const petiCode = (await parent.locator('#code-value').innerText()).trim();
+
+        // Ugyanazon a tableten Peti is összekötődik, és gyakorol
+        await kid.locator('#cloud-footer-btn').click();
+        await kid.locator('#cloud-add-btn').click();
+        await kid.fill('#cloud-code', petiCode);
+        await kid.locator('#cloud-link-btn').click();
+        await kid.locator('#child-chip', { hasText: 'Peti' }).waitFor({ timeout: 20000 });
+        expect((await kid.locator('#child-chip').innerText()).includes('⇄'), 'a jelvényen nem látszik, hogy lehet váltani');
+        await playExam(kid, 5);
+        await kid.waitForFunction(() => {
+            const box = JSON.parse(localStorage.getItem('szorzo_outbox') || '{"answers":[1]}');
+            return !box.answers.length && !box.sessions.length;
+        }, null, { timeout: 20000 });
+        const perChild = await sql('test', `select c.nickname, count(a.id) as n from public.children c
+            left join public.answers a on a.child_id = c.id group by c.nickname`);
+        const counts = Object.fromEntries(perChild.map((r) => [r.nickname, +r.n]));
+        expect(counts.Bori === 22 && counts.Peti === 11, `válaszok gyerekenként: ${JSON.stringify(counts)} (Bori 22, Peti 11 kell)`);
+
+        // Az app újraindul: ki gyakorol most? Bori a PIN-jével
+        const restarted = await kid.context().newPage();
+        restarted.on('dialog', (d) => d.accept());
+        await restarted.goto(BASE);
+        await restarted.waitForFunction(() => JSON.parse(localStorage.getItem('szorzo_children') || '[]').some((c) => c.pin_hash),
+            null, { timeout: 20000 });
+        await restarted.locator('#profile-overlay').waitFor({ state: 'visible', timeout: 10000 });
+        expect((await restarted.locator('.profile-btn').count()) === 2, 'nem két profil közül lehet választani');
+        await restarted.locator('.profile-btn', { hasText: 'Bori' }).click();
+        await restarted.locator('#pin-overlay').waitFor({ state: 'visible' });
+        const tapPin = async (digits) => {
+            for (const d of digits) await restarted.locator('#pin-overlay').getByRole('button', { name: d, exact: true }).click();
+            await restarted.waitForTimeout(500);
+        };
+        await tapPin('0000');
+        const wrong = await restarted.locator('#pin-msg').innerText();
+        expect(wrong.includes('Nem ez'), `rossz PIN után: ${wrong}`);
+        await tapPin('1234');
+        await restarted.locator('#child-chip', { hasText: 'Bori' }).waitFor({ timeout: 10000 });
+        const facts = await restarted.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('szorzo_facts') || '{}')).length);
+        expect(facts === 22, `Bori térképe: ${facts} feladat (22 kell, nem Petié)`);
+        await shot(restarted, '4-kozos-tablet');
+        await restarted.close();
+    });
+
     await test('Meghívás az appból: a meghívott belép és látja a családot', async (expect) => {
         // a teszt projekt nem küld levelet: a levélküldést itt "elfogjuk"
         await parent.route('**/auth/v1/otp**', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
@@ -259,9 +319,23 @@ async function main() {
         await parent.locator('#view-child').waitFor({ state: 'visible' });
         await parent.locator('#device-list button', { hasText: 'leválasztás' }).click();
         await parent.locator('#device-list', { hasText: 'Még nincs összekötött eszköz' }).waitFor({ timeout: 10000 });
+        kid.logs.length = 0;
         await kid.reload();
-        await kid.locator('#child-chip').waitFor({ state: 'hidden', timeout: 20000 });
-        expect(!(await kid.evaluate(() => localStorage.getItem('szorzo_child'))), 'a gyerek app még összekötöttnek hiszi magát');
+        try {
+            await kid.locator('#child-chip', { hasText: 'Peti' }).waitFor({ timeout: 20000 });
+        } catch (e) {
+            const state = await kid.evaluate(() => ({
+                children: localStorage.getItem('szorzo_children'), active: localStorage.getItem('szorzo_active_child'),
+                chip: document.getElementById('child-chip').innerText, hidden: document.getElementById('child-chip').hidden }));
+            throw new Error(`a jelvény nem Peti: ${JSON.stringify(state)} | napló: ${kid.logs.join(' | ')}`);
+        }
+        const left = await kid.evaluate(() => JSON.parse(localStorage.getItem('szorzo_children') || '[]').map((c) => c.nickname));
+        expect(JSON.stringify(left) === '["Peti"]', `az eszközön maradt: ${JSON.stringify(left)} (csak Peti kell)`);
+        const token = await kid.evaluate(() => JSON.parse(localStorage.getItem('szorzo-eszkoz-auth')).access_token);
+        const bori = (await sql('test', `select id from public.children where nickname = 'Bori'`))[0].id;
+        const write = await rest('POST', 'answers', token, [{ id: crypto.randomUUID(), child_id: bori, op: 'mul', tbl: 2,
+            other: 3, outcome: 'o', answered_at: new Date().toISOString(), device_user_id: null }]);
+        expect(!write.ok, 'a leválasztott eszköz még írhat Bori válaszai közé');
     });
 
     await browser.close();

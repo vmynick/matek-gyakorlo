@@ -429,6 +429,18 @@
         </section>
 
         <section class="card">
+            <h2>🔒 Gyerek-PIN</h2>
+            <p class="muted">Közös tableten hasznos: a gyerek induláskor a PIN-jével választja ki magát, így a testvérek nem gyakorolnak egymás nevében. Nem kötelező. A gyerek eszközén a következő szinkronnál érvényes.</p>
+            <p class="msg" id="pin-status"></p>
+            <form class="row" onsubmit="setChildPin(event)">
+                <input id="child-pin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required
+                       autocomplete="off" placeholder="4 számjegy">
+                <button class="btn">PIN beállítása</button>
+                <button class="btn secondary" type="button" id="pin-remove-btn" onclick="removeChildPin()">PIN kikapcsolása</button>
+            </form>
+        </section>
+
+        <section class="card">
             <h2>⚠️ Törlés</h2>
             <div class="row">
                 <button class="btn danger" onclick="clearChildStats()">Statisztika törlése</button>

@@ -785,8 +785,61 @@
             justify-content: center;
         }
 
-        .cloud-child {
-            font-size: 1.4rem;
+        .cloud-children {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            text-align: left;
+        }
+
+        .cloud-children li {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            font-size: 1.1rem;
+            font-weight: 700;
+            padding: 6px 10px;
+            border-radius: 10px;
+            background: var(--surface);
+        }
+
+        .cloud-children .link-btn {
+            font-size: 0.8rem;
+            font-weight: 400;
+            color: var(--text-muted);
+        }
+
+        /* Közös tablet: profilválasztó */
+        .profile-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .profile-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            padding: 14px 8px;
+            border: 2px solid var(--border);
+            border-radius: 16px;
+            background: var(--surface);
+            color: var(--text-dark);
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .profile-btn .avatar {
+            font-size: 2.6rem;
+        }
+
+        .profile-btn.active {
+            border-color: var(--primary);
         }
 
         .cloud-adult {
@@ -874,7 +927,7 @@
     <div id="screen-setup" class="screen active">
         <h1>✨ Szorzótábla Mester</h1>
         <!-- Összekötött eszközön: kié az eszköz (koppintásra a felhő ablak) -->
-        <button class="child-chip" id="child-chip" hidden onclick="openCloudPanel()"></button>
+        <button class="child-chip" id="child-chip" hidden onclick="onChildChipClick()"></button>
 
         <!-- Üzemmód választás -->
         <div class="mode-selector">
@@ -1093,13 +1146,22 @@
             <button class="btn-start" id="cloud-link-btn" onclick="linkDevice()">Összekötés</button>
         </div>
         <div id="cloud-linked" hidden>
-            <p class="cloud-child"><span id="cloud-avatar"></span> <strong id="cloud-name"></strong></p>
+            <p class="pin-msg">Ezen az eszközön gyakorol:</p>
+            <ul class="cloud-children" id="cloud-children"></ul>
             <p class="pin-msg" id="cloud-status"></p>
             <button class="btn-start" onclick="syncFromPanel()">🔄 Szinkronizálás most</button>
-            <button class="link-btn cloud-unlink" onclick="unlinkDevice()">Kapcsolat bontása (szülői PIN)</button>
+            <button class="link-btn" id="cloud-add-btn" onclick="showAddChild()">➕ Még egy gyerek összekötése ezzel az eszközzel</button>
         </div>
         <p class="cloud-adult"><a href="szulo.html">👨‍👩‍👧 Szülő vagy tanár vagy? Szülői felület ➔</a></p>
         <button class="link-btn" onclick="closeCloudPanel()">Bezárás</button>
+    </div>
+</div>
+
+<!-- Közös tablet: ki gyakorol most? -->
+<div class="pin-overlay" id="profile-overlay" hidden>
+    <div class="pin-box" role="dialog" aria-modal="true" aria-labelledby="profile-title">
+        <h3 id="profile-title">👋 Ki gyakorol most?</h3>
+        <div class="profile-grid" id="profile-grid"></div>
     </div>
 </div>
 
@@ -1252,6 +1314,7 @@
 
         // Felhő: összekötött eszköz szinkronja; a szülőtől kapott linkben (?kod=...) érkező kód beírása
         updateCloudUI();
+        askWhoIsPracticing();
         cloudSync();
         window.addEventListener('online', () => cloudSync());
         openCloudPanelFromLink();
@@ -1728,15 +1791,25 @@
     function requireParentPin(onSuccess) {
         const hasPin = localStorage.getItem('szorzo_pin') !== null;
         pinFlow = { step: hasPin ? 'enter' : 'new', input: '', first: null, onSuccess };
+        document.getElementById('pin-title').innerText = '👨‍👩‍👧 Szülői PIN';
+        showPinStep();
+        document.getElementById('pin-overlay').hidden = false;
+    }
+
+    // Közös tableten a gyerek a saját PIN-jével választja ki magát (ha a szülő beállított neki)
+    function requireChildPin(child, onSuccess, onCancel) {
+        pinFlow = { step: 'child', child, input: '', onSuccess, onCancel };
+        document.getElementById('pin-title').innerText = `🔒 ${child.avatar} ${child.nickname}`;
         showPinStep();
         document.getElementById('pin-overlay').hidden = false;
     }
 
     function showPinStep(error) {
         const texts = {
-            enter: 'Add meg a szülői PIN-t a törléshez.',
+            enter: 'Add meg a szülői PIN-t.',
             new: 'Még nincs szülői PIN. Állíts be egy 4 jegyű PIN-t!',
             repeat: 'Írd be még egyszer ugyanazt a PIN-t.',
+            child: 'Írd be a PIN-edet!',
         };
         const msg = document.getElementById('pin-msg');
         msg.innerText = error || texts[pinFlow.step];
@@ -1769,7 +1842,15 @@
         const entered = pinFlow.input;
         pinFlow.input = '';
 
-        if (pinFlow.step === 'enter') {
+        if (pinFlow.step === 'child') {
+            const flow = pinFlow;
+            childPinMatches(flow.child, entered).then(ok => {
+                if (pinFlow !== flow) return;
+                if (ok) return finishPin();
+                playSound('wrong');
+                showPinStep('Nem ez a PIN, próbáld újra!');
+            });
+        } else if (pinFlow.step === 'enter') {
             if (entered === localStorage.getItem('szorzo_pin')) return finishPin();
             playSound('wrong');
             showPinStep('Hibás PIN, próbáld újra!');
@@ -1788,14 +1869,17 @@
     }
 
     function finishPin() {
-        const onSuccess = pinFlow.onSuccess;
+        const flow = pinFlow;
+        flow.done = true;
         closePin();
-        onSuccess();
+        flow.onSuccess();
     }
 
     function closePin() {
+        const flow = pinFlow;
         pinFlow = null;
         document.getElementById('pin-overlay').hidden = true;
+        if (flow && !flow.done && flow.onCancel) flow.onCancel();
         scheduleUpdate();
     }
 
@@ -1939,7 +2023,7 @@
     }
 
     /* --- VERZIÓ ÉS MEGOSZTÁS --- */
-    const APP_VERSION = '1.2';
+    const APP_VERSION = '1.3';
     const APP_BUILD = 'dev'; // a közzététel (GitHub Actions) írja át a commit rövid azonosítójára
     const APP_URL = 'https://vmynick.github.io/matek-gyakorlo/';
 
@@ -1971,28 +2055,107 @@
     /* --- FELHŐ: AZ ESZKÖZ ÖSSZEKÖTÉSE A GYEREKKEL (cloud.js) --- */
     function updateCloudUI() {
         const child = linkedChild();
+        const several = linkedChildren().length > 1;
         const chip = document.getElementById('child-chip');
         chip.hidden = !child;
-        if (child) chip.innerText = `${child.avatar} ${child.nickname}`;
+        if (child) chip.innerText = `${child.avatar} ${child.nickname}${several ? ' ⇄' : ''}`;
+        chip.title = several ? 'Gyerek váltása' : 'Felhő';
         document.getElementById('cloud-footer-btn').innerText = child ? '☁️ Felhő' : '☁️ Eszköz összekötése';
     }
 
+    // A jelvény: közös tableten gyerekváltás, egyébként a felhő ablak
+    function onChildChipClick() {
+        if (linkedChildren().length > 1) openProfileChooser();
+        else openCloudPanel();
+    }
+
+    // code: a szülőtől kapott linkből érkező kód (ilyenkor egy további gyerek összekötése jön)
     function openCloudPanel(code) {
         playSound('click');
-        const child = linkedChild();
-        document.getElementById('cloud-unlinked').hidden = !!child;
-        document.getElementById('cloud-linked').hidden = !child;
+        const children = linkedChildren();
+        const adding = !children.length || typeof code === 'string';
+        document.getElementById('cloud-title').innerText = children.length ? '☁️ Felhő' : '☁️ Eszköz összekötése';
+        document.getElementById('cloud-linked').hidden = !children.length;
+        document.getElementById('cloud-unlinked').hidden = !adding;
+        document.getElementById('cloud-add-btn').hidden = adding;
         document.getElementById('cloud-error').innerText = '';
-        if (child) {
-            document.getElementById('cloud-avatar').innerText = child.avatar;
-            document.getElementById('cloud-name').innerText = child.nickname;
+        document.getElementById('cloud-code').value = typeof code === 'string' ? code : '';
+        const history = JSON.parse(localStorage.getItem('szorzo_history') || '[]');
+        // az eddigi helyi eredmények átvétele csak az első összekötésnél kérdés
+        document.getElementById('cloud-import-row').hidden =
+            children.length > 0 || (!Object.keys(loadFacts()).length && !history.length);
+        if (children.length) {
+            renderCloudChildren();
             showCloudStatus();
-        } else {
-            const history = JSON.parse(localStorage.getItem('szorzo_history') || '[]');
-            document.getElementById('cloud-import-row').hidden = !Object.keys(loadFacts()).length && !history.length;
-            document.getElementById('cloud-code').value = typeof code === 'string' ? code : '';
         }
         document.getElementById('cloud-overlay').hidden = false;
+    }
+
+    function showAddChild() {
+        document.getElementById('cloud-unlinked').hidden = false;
+        document.getElementById('cloud-add-btn').hidden = true;
+        document.getElementById('cloud-code').focus();
+    }
+
+    function renderCloudChildren() {
+        const list = document.getElementById('cloud-children');
+        list.innerHTML = '';
+        linkedChildren().forEach(child => {
+            const li = document.createElement('li');
+            const name = document.createElement('span');
+            name.textContent = `${child.avatar} ${child.nickname}${child.pin_hash ? ' 🔒' : ''}`;
+            const unlink = document.createElement('button');
+            unlink.className = 'link-btn';
+            unlink.textContent = 'leválasztás';
+            unlink.onclick = () => unlinkChild(child);
+            li.append(name, unlink);
+            list.appendChild(li);
+        });
+    }
+
+    /* Közös tablet: ki gyakorol most? (induláskor és a jelvényre koppintva) */
+    function openProfileChooser() {
+        const children = linkedChildren();
+        if (children.length < 2) return;
+        const active = linkedChild();
+        const grid = document.getElementById('profile-grid');
+        grid.innerHTML = '';
+        children.forEach(child => {
+            const btn = document.createElement('button');
+            btn.className = `profile-btn${active && active.id === child.id ? ' active' : ''}`;
+            const avatar = document.createElement('span');
+            avatar.className = 'avatar';
+            avatar.textContent = child.avatar;
+            const name = document.createElement('span');
+            name.textContent = `${child.nickname}${child.pin_hash ? ' 🔒' : ''}`;
+            btn.append(avatar, name);
+            btn.onclick = () => chooseProfile(child);
+            grid.appendChild(btn);
+        });
+        document.getElementById('profile-overlay').hidden = false;
+    }
+
+    function chooseProfile(chosen) {
+        playSound('click');
+        // a legfrissebb adat kell: a szülő épp most kapcsolhatta be a PIN-t (a szinkron frissíti)
+        const child = linkedChildren().find(c => c.id === chosen.id) || chosen;
+        const overlay = document.getElementById('profile-overlay');
+        const done = () => {
+            overlay.hidden = true;
+            selectChild(child.id);
+            sessionStorage.setItem('szorzo_session_child', child.id);
+            onCloudSynced();
+            cloudSync();
+            showToast(`👋 Szia, ${child.nickname}!`);
+        };
+        if (!child.pin_hash) return done();
+        overlay.hidden = true;
+        requireChildPin(child, done, () => { overlay.hidden = false; });
+    }
+
+    // Induláskor: ha több gyerek használja az eszközt és ebben a munkamenetben még nem választottak
+    function askWhoIsPracticing() {
+        if (linkedChildren().length > 1 && !sessionStorage.getItem('szorzo_session_child')) openProfileChooser();
     }
 
     function closeCloudPanel() {
@@ -2024,6 +2187,7 @@
         errorEl.innerText = '';
         try {
             const child = await cloudLink(code, document.getElementById('cloud-import').checked);
+            sessionStorage.setItem('szorzo_session_child', child.id); // most ő gyakorol
             closeCloudPanel();
             onCloudSynced();
             showToast(`☁️ Összekötve: ${child.avatar} ${child.nickname}`);
@@ -2047,14 +2211,14 @@
         if (!ok) showToast(navigator.onLine ? '⚠️ Most nem sikerült, később újra próbálja.' : '📴 Nincs internet, az eredmények megvárják.');
     }
 
-    // A kapcsolat bontása szülői PIN-hez kötött (a gyerek ne tudja véletlenül megszüntetni)
-    function unlinkDevice() {
+    // Egy gyerek leválasztása erről az eszközről: szülői PIN-hez kötött (a gyerek ne tudja véletlenül megszüntetni)
+    function unlinkChild(child) {
         closeCloudPanel();
         requireParentPin(async () => {
-            if (!confirm('Biztosan bontod az eszköz kapcsolatát? A gyerek eredményei a felhőben megmaradnak.')) return;
-            await cloudUnlink();
+            if (!confirm(`Biztosan leválasztod ${child.nickname} profilját erről az eszközről? Az eredményei a felhőben megmaradnak.`)) return;
+            await cloudUnlink(child.id);
             onCloudSynced();
-            showToast('☁️ Az eszköz kapcsolata megszűnt');
+            showToast(`☁️ ${child.nickname} leválasztva erről az eszközről`);
         });
     }
 
@@ -2062,6 +2226,10 @@
     function onCloudSynced() {
         updateCloudUI();
         updateSetupInfo();
+        if (!document.getElementById('profile-overlay').hidden) {
+            if (linkedChildren().length > 1) openProfileChooser(); // friss nevek, PIN-ek
+            else document.getElementById('profile-overlay').hidden = true;
+        }
         if (document.getElementById('screen-stats').classList.contains('active')) {
             renderChart();
             renderHeatmap();
