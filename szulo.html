@@ -45,6 +45,11 @@
             gap: 14px;
         }
 
+        .console .console {
+            width: 100%;
+            margin: 0;
+        }
+
         .console-head {
             display: flex;
             flex-wrap: wrap;
@@ -62,8 +67,25 @@
             font-size: 0.85rem;
             color: var(--text-muted);
             display: flex;
+            flex-wrap: wrap;
             gap: 8px;
             align-items: center;
+        }
+
+        .who-roles {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+
+        .role-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 0.9rem;
         }
 
         a, .link {
@@ -225,6 +247,149 @@
             font-size: 0.85rem;
         }
 
+        /* Beállítás-lista: egységes sorok (ikon, cím, állapotot mutató alcím), koppintásra nyílnak */
+        .settings-list {
+            display: flex;
+            flex-direction: column;
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            overflow: hidden;
+            background: var(--raised);
+        }
+
+        .setting {
+            border-bottom: 1px solid var(--border);
+        }
+
+        .setting:last-child {
+            border-bottom: none;
+        }
+
+        .setting > summary {
+            list-style: none;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 14px;
+            margin: 0 !important;
+            cursor: pointer;
+            color: var(--text-dark);
+            font-weight: 400;
+        }
+
+        .setting > summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .setting > summary::after {
+            content: '';
+            flex: none;
+            width: 7px;
+            height: 7px;
+            margin: 0 4px 0 auto;
+            border-right: 2px solid var(--text-muted);
+            border-bottom: 2px solid var(--text-muted);
+            transform: rotate(-45deg);
+            transition: transform 0.15s;
+        }
+
+        .setting[open] > summary {
+            background: var(--surface);
+        }
+
+        .setting[open] > summary::after {
+            transform: rotate(45deg);
+        }
+
+        /* Jogosultság-kapcsolók (admin) */
+        .toggle-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+
+        .toggle-row input {
+            flex: none;
+            width: 20px;
+            height: 20px;
+            margin: 0;
+            padding: 0;
+            accent-color: var(--primary);
+        }
+
+        .s-icon {
+            flex: none;
+            width: 1.6em;
+            font-size: 1.3rem;
+            text-align: center;
+        }
+
+        .s-text {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            min-width: 0;
+        }
+
+        .s-text strong {
+            font-size: 0.95rem;
+        }
+
+        .s-text small {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+        }
+
+        .setting.danger .s-text strong {
+            color: var(--danger);
+        }
+
+        .setting-body {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 6px 14px 14px;
+        }
+
+        /* A csoport beállításai: egy összecsukható blokk a kártya alján */
+        .settings-group > summary {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--surface);
+            color: var(--text-dark);
+            font-size: 0.9rem;
+        }
+
+        .settings-group[open] > summary {
+            margin-bottom: 10px;
+        }
+
+        .card.compact {
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .badge {
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: var(--selected-bg);
+            color: var(--primary-text);
+            font-size: 0.75rem;
+            font-weight: 700;
+        }
+
+        .privacy {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
         /* Szülő / tanár / admin fülek */
         .mode-tabs {
             display: flex;
@@ -237,7 +402,12 @@
 
         .mode-tabs button {
             flex: 1;
-            padding: 10px 6px;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+            padding: 8px 4px;
             border: none;
             border-radius: 10px;
             background: transparent;
@@ -492,6 +662,7 @@
         <h1 id="console-title">👨‍👩‍👧 Szülői / tanári felület</h1>
         <div class="who" id="who" hidden>
             <span id="who-email"></span>
+            <span class="who-roles" id="who-roles" title="A jogosultságaid"></span>
             <button class="link" onclick="logout()">Kijelentkezés</button>
         </div>
     </header>
@@ -507,6 +678,21 @@
             <button class="btn" id="login-btn">Belépő link küldése</button>
         </form>
         <p class="msg" id="login-msg"></p>
+        <details>
+            <summary>🔒 Milyen adatot tárolunk?</summary>
+            <!-- Rövid adatkezelési tájékoztató (gyerekek adatairól van szó); a Fiók fülön is megjelenik -->
+            <div class="muted privacy" id="privacy-text">
+                <p><strong>Felnőttek:</strong> az e-mail cím (a belépéshez) és hogy melyik csoport tagja.</p>
+                <p><strong>Gyerekek:</strong> csak becenév és avatar – valódi nevet, e-mail címet, születési dátumot nem kérünk.
+                    A gyakorlás eredményei: melyik feladat, elsőre jó / csonttal javított / hibás, a válaszidő és a tesztek százaléka.</p>
+                <p><strong>Ki látja:</strong> csak a gyerek csoportjának felnőtt tagjai és a gyerek saját, összekötött eszközei.
+                    Ezt az adatbázis szabályai biztosítják, nem csak a felület.</p>
+                <p><strong>Hol:</strong> a Supabase szolgáltatásnál, az Európai Unióban (Írország). Reklámra vagy bármi másra nem használjuk, harmadik félnek nem adjuk át.</p>
+                <p><strong>Törlés:</strong> a gyerek eredményei és profilja ezen a felületen bármikor törölhetők (a törlés végleges),
+                    a saját fiókodat a Fiók fülön törölheted.</p>
+                <p>Összekötés nélkül a gyakorló app semmit nem küld sehova: minden csak az eszközön marad.</p>
+            </div>
+        </details>
     </section>
 
     <section class="card" id="view-noaccess" hidden>
@@ -515,15 +701,16 @@
         <button class="btn secondary" onclick="logout()">Kijelentkezés</button>
     </section>
 
-    <!-- Kezdőlap: a szülőnek a gyerekei, a tanárnak az osztályai; akinek több is van, füllel vált -->
+    <!-- Kezdőlap: fülek szerint; elöl a tartalom, a beállítások csoportonként egy helyen -->
     <div class="console" id="view-home" hidden>
-        <nav class="mode-tabs" id="mode-tabs" hidden>
-            <button data-mode="family" onclick="setConsoleMode('family')">🏠 Családom</button>
-            <button data-mode="class" onclick="setConsoleMode('class')">🏫 Osztályaim</button>
-            <button data-mode="admin" onclick="setConsoleMode('admin')">🛡️ Admin</button>
+        <nav class="mode-tabs" id="mode-tabs">
+            <button data-mode="family" onclick="setConsoleMode('family')"><span>🏠</span>Családom</button>
+            <button data-mode="class" onclick="setConsoleMode('class')"><span>🏫</span>Osztályaim</button>
+            <button data-mode="admin" onclick="setConsoleMode('admin')"><span>🛡️</span>Admin</button>
+            <button data-mode="account" onclick="setConsoleMode('account')"><span>👤</span>Fiók</button>
         </nav>
 
-        <!-- Szülő: a gyerekei elöl, a család beállításai alatta -->
+        <!-- Szülő: a gyerekei elöl, a családok (beállításokkal) alatta -->
         <div class="console" id="home-family">
             <section class="card">
                 <h2>👧 Gyerekeim</h2>
@@ -532,47 +719,85 @@
             <div class="console" id="family-groups"></div>
         </div>
 
-        <!-- Tanár: az osztályai összesítéssel -->
+        <!-- Tanár: az osztályai összegzéssel -->
         <div class="console" id="home-class">
             <div class="console" id="class-groups"></div>
         </div>
 
-        <section class="card" id="new-group-card" hidden>
-            <h2 id="new-group-title">➕ Új család</h2>
-            <p class="muted" id="new-group-help"></p>
-            <form onsubmit="createGroup(event)">
-                <input id="group-name" required maxlength="60">
-                <input type="hidden" id="group-kind" value="family">
-                <button class="btn">Létrehozás</button>
-            </form>
-        </section>
-
-        <section class="card" id="admin-card" hidden>
-            <h2>🛡️ Admin</h2>
-            <p><strong>Meghívás saját csoporttal</strong></p>
-            <p class="muted">Tanár vagy szülő meghívása, aki saját csoportot (osztályt / családot) hozhat létre.</p>
-            <form onsubmit="inviteCreator(event)">
-                <input type="email" id="creator-email" required placeholder="tanar@iskola.hu">
-                <button class="btn">Meghívás</button>
-            </form>
-            <p class="msg" id="creator-msg"></p>
-            <details id="admin-adults-box">
-                <summary>👥 Felnőttek kezelése</summary>
-                <p class="muted">Minden regisztrált felnőtt. A gyerekek eredményeibe innen nem látsz bele; a hozzáférés megvonása törli a fiókot (a csak az ő csoportjában lévő gyerekekkel együtt).</p>
-                <ul class="members" id="admin-adults"></ul>
+        <!-- Új család / osztály: összecsukva a lap alján -->
+        <section class="card compact" id="new-group-card" hidden>
+            <details class="setting" id="new-group-box">
+                <summary>
+                    <span class="s-icon">➕</span>
+                    <span class="s-text"><strong id="new-group-title">Új család</strong><small id="new-group-help"></small></span>
+                </summary>
+                <div class="setting-body">
+                    <form onsubmit="createGroup(event)">
+                        <input id="group-name" required maxlength="60">
+                        <input type="hidden" id="group-kind" value="family">
+                        <button class="btn">Létrehozás</button>
+                    </form>
+                </div>
             </details>
         </section>
 
-        <section class="card" id="pending-card" hidden>
-            <h2>✉️ Elküldött meghívók</h2>
-            <ul class="members" id="pending-list"></ul>
-        </section>
+        <!-- Admin -->
+        <div class="console" id="admin-card" hidden>
+            <section class="card">
+                <h2>✉️ Meghívás saját csoporttal</h2>
+                <p class="muted">Tanár vagy szülő, aki saját csoportot (osztályt / családot) hozhat létre. Belépő linket kap e-mailben.</p>
+                <form onsubmit="inviteCreator(event)">
+                    <input type="email" id="creator-email" required placeholder="tanar@iskola.hu">
+                    <button class="btn">Meghívás</button>
+                </form>
+                <p class="msg" id="creator-msg"></p>
+            </section>
+            <section class="card">
+                <h2>👥 Felnőttek <span class="badge" id="admin-count"></span></h2>
+                <p class="muted">Minden regisztrált felnőtt és a jogai; koppints egy sorra a módosításhoz. A gyerekek eredményeibe innen nem látsz bele.</p>
+                <div class="settings-list" id="admin-adults"></div>
+            </section>
+        </div>
 
-        <section class="card">
-            <h2>👤 Fiókom</h2>
-            <p class="muted">A fiókod törlésekor kilépsz minden csoportból. Ahol rajtad kívül más is van, ő viszi tovább a csoportot (ha kell, tulajdonos lesz); ahol egyedül voltál, a csoport és a csak abban lévő gyerekek eredményei is törlődnek.</p>
-            <div class="row"><button class="btn danger" onclick="deleteMyAccount()">Saját fiók törlése</button></div>
-        </section>
+        <!-- Fiók -->
+        <div class="console" id="home-account" hidden>
+            <section class="card">
+                <h2>👤 Fiókom</h2>
+                <p><strong id="account-email"></strong></p>
+                <ul class="role-list" id="account-roles"></ul>
+                <p class="muted" id="account-groups"></p>
+                <div class="row"><button class="btn secondary" onclick="logout()">Kijelentkezés</button></div>
+            </section>
+            <section class="card">
+                <h2>⚙️ Beállítások</h2>
+                <div class="settings-list">
+                    <details class="setting" id="pending-card">
+                        <summary>
+                            <span class="s-icon">✉️</span>
+                            <span class="s-text"><strong>Elküldött meghívók</strong><small id="pending-sub"></small></span>
+                        </summary>
+                        <div class="setting-body"><ul class="members" id="pending-list"></ul></div>
+                    </details>
+                    <details class="setting">
+                        <summary>
+                            <span class="s-icon">🔒</span>
+                            <span class="s-text"><strong>Milyen adatot tárolunk?</strong><small>adatkezelési tájékoztató</small></span>
+                        </summary>
+                        <div class="setting-body muted privacy" id="privacy-account"></div>
+                    </details>
+                    <details class="setting danger">
+                        <summary>
+                            <span class="s-icon">🗑️</span>
+                            <span class="s-text"><strong>Saját fiók törlése</strong><small>végleges, nem vonható vissza</small></span>
+                        </summary>
+                        <div class="setting-body">
+                            <p class="muted">Kilépsz minden csoportból. Ahol rajtad kívül más is van, ő viszi tovább a csoportot (ha kell, tulajdonos lesz); ahol egyedül voltál, a csoport és a csak abban lévő gyerekek eredményei is törlődnek.</p>
+                            <div class="row"><button class="btn danger" onclick="deleteMyAccount()">Saját fiók törlése</button></div>
+                        </div>
+                    </details>
+                </div>
+            </section>
+        </div>
     </div>
 
     <!-- Egy csoport együtt: összesített térkép, gyerekek, kiosztott feladatok -->
@@ -607,69 +832,47 @@
 
         <section class="card">
             <h2>📌 Kiosztott feladatok</h2>
-            <details id="assign-box">
-                <summary>➕ Új feladat kiosztása</summary>
-                <form class="assign-form" onsubmit="createAssignment(event)">
-                    <p class="muted">Táblák:</p>
-                    <div class="table-picks" id="assign-tables"></div>
-                    <div class="row">
-                        <select id="assign-op" aria-label="Művelet">
-                            <option value="mul">× Szorzás</option>
-                            <option value="div">➗ Osztás</option>
-                            <option value="mix">🔀 Vegyes</option>
-                        </select>
-                        <select id="assign-mode" aria-label="Mód"
-                                onchange="document.getElementById('assign-count').hidden = this.value === 'exam'">
-                            <option value="practice">🎈 Gyakorló (csontokkal)</option>
-                            <option value="exam">👨‍👩‍👧 Kikérdező (az összes, csont nélkül)</option>
-                        </select>
-                        <input type="number" id="assign-count" min="1" max="242" value="20" aria-label="Feladatok száma" title="Feladatok száma">
+            <div class="settings-list">
+                <details class="setting" id="assign-box">
+                    <summary>
+                        <span class="s-icon">➕</span>
+                        <span class="s-text"><strong>Új feladat kiosztása</strong><small>táblák, művelet, darabszám, határidő</small></span>
+                    </summary>
+                    <div class="setting-body">
+                        <form class="assign-form" onsubmit="createAssignment(event)">
+                            <p class="muted">Táblák:</p>
+                            <div class="table-picks" id="assign-tables"></div>
+                            <div class="row">
+                                <select id="assign-op" aria-label="Művelet">
+                                    <option value="mul">× Szorzás</option>
+                                    <option value="div">➗ Osztás</option>
+                                    <option value="mix">🔀 Vegyes</option>
+                                </select>
+                                <select id="assign-mode" aria-label="Mód"
+                                        onchange="document.getElementById('assign-count').hidden = this.value === 'exam'">
+                                    <option value="practice">🎈 Gyakorló (csontokkal)</option>
+                                    <option value="exam">👨‍👩‍👧 Kikérdező (az összes, csont nélkül)</option>
+                                </select>
+                                <input type="number" id="assign-count" min="1" max="242" value="20" aria-label="Feladatok száma" title="Feladatok száma">
+                            </div>
+                            <div class="row">
+                                <label class="muted">Határidő: <input type="date" id="assign-due"></label>
+                                <input id="assign-note" maxlength="120" placeholder="Üzenet a gyerekeknek (nem kötelező)">
+                            </div>
+                            <div class="row"><button class="btn">📌 Kiosztás</button></div>
+                        </form>
                     </div>
-                    <div class="row">
-                        <label class="muted">Határidő: <input type="date" id="assign-due"></label>
-                        <input id="assign-note" maxlength="120" placeholder="Üzenet a gyerekeknek (nem kötelező)">
-                    </div>
-                    <div class="row"><button class="btn">📌 Kiosztás</button></div>
-                </form>
-            </details>
+                </details>
+            </div>
             <div id="assignment-list"></div>
         </section>
     </div>
 
-    <!-- Egy gyerek: statisztika, eszközök, kód -->
+    <!-- Egy gyerek: elöl a fejlődés és a feladatai, alatta a beállításai egy listában -->
     <div class="console" id="view-child" hidden>
         <div><button class="link" onclick="showHome()">← Vissza a csoportokhoz</button></div>
         <section class="card">
             <div class="child-head"><span id="child-avatar"></span><span id="child-name"></span></div>
-            <details id="child-edit-box">
-                <summary>✏️ Név és avatar módosítása</summary>
-                <form class="row" onsubmit="saveChild(event)">
-                    <input id="edit-nickname" maxlength="30" required placeholder="Becenév">
-                    <button class="btn">Mentés</button>
-                </form>
-                <div class="avatars" id="edit-avatars"></div>
-            </details>
-        </section>
-
-        <section class="card">
-            <h2>🏷️ Csoportok</h2>
-            <p class="muted">Egy gyerek több csoportban is lehet (pl. a családban és az osztályban is).</p>
-            <ul class="members" id="child-group-list"></ul>
-            <form class="row" id="child-add-group" onsubmit="addChildToGroup(event)">
-                <select id="child-target-group" aria-label="Csoport"></select>
-                <button class="btn">➕ Hozzáadás</button>
-                <button class="btn secondary" type="button" id="child-move-btn" onclick="moveChildToGroup()">➡️ Áthelyezés ide</button>
-            </form>
-            <details id="child-join-box">
-                <summary>🏫 Csatlakozás osztályhoz kóddal</summary>
-                <p class="muted">A tanártól kapott 6 jegyű kóddal a gyerek az osztályba is bekerül. Az osztály tanárai látni fogják a gyerek eredményeit; te nem látod a többi gyereket, és ők sem látják a családodat.</p>
-                <form class="row" onsubmit="joinClass(event)">
-                    <input id="join-code" maxlength="6" placeholder="ABC234" autocomplete="off"
-                           oninput="this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '')">
-                    <button class="btn">Csatlakozás</button>
-                </form>
-                <p class="msg" id="join-msg"></p>
-            </details>
         </section>
 
         <section class="card">
@@ -695,65 +898,113 @@
             </div>
         </section>
 
-        <section class="card" id="child-devices-card">
-            <h2>📱 Eszközök</h2>
-            <p class="muted">A gyerek eszközén: Szorzótábla Mester → lent „☁️ Eszköz összekötése” → kód beírása. Egy kód 24 óráig érvényes és egyszer használható.</p>
-            <ul class="members" id="device-list"></ul>
-            <div class="row">
-                <button class="btn" onclick="newDeviceCode()">🔑 Új eszköz-kód</button>
-            </div>
-            <div class="code-box" id="code-box" hidden>
-                <div class="code" id="code-value"></div>
-                <p class="muted" id="code-expiry"></p>
-                <div class="row" style="justify-content:center">
-                    <button class="btn secondary" onclick="shareDeviceCode()">📤 Kód küldése a gyerek eszközére</button>
-                </div>
-            </div>
-        </section>
-
         <section class="card" id="child-assignments-card" hidden>
             <h2>📌 Kiosztott feladatok</h2>
             <ul class="members" id="child-assignments"></ul>
         </section>
 
-        <section class="card" id="child-pin-card">
-            <h2>🔒 Gyerek-PIN</h2>
-            <p class="muted">Közös tableten hasznos: a gyerek induláskor a PIN-jével választja ki magát, így a testvérek nem gyakorolnak egymás nevében. Nem kötelező. A gyerek eszközén a következő szinkronnál érvényes.</p>
-            <p class="msg" id="pin-status"></p>
-            <form class="row" onsubmit="setChildPin(event)">
-                <input id="child-pin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required
-                       autocomplete="off" placeholder="4 számjegy">
-                <button class="btn">PIN beállítása</button>
-                <button class="btn secondary" type="button" id="pin-remove-btn" onclick="removeChildPin()">PIN kikapcsolása</button>
-            </form>
-        </section>
+        <section class="card">
+            <h2>⚙️ <span id="settings-child-name"></span> beállításai</h2>
+            <div class="settings-list">
+                <details class="setting" id="child-groups-box">
+                    <summary>
+                        <span class="s-icon">🏷️</span>
+                        <span class="s-text"><strong>Csoportok</strong><small id="child-groups-sub"></small></span>
+                    </summary>
+                    <div class="setting-body">
+                        <p class="muted">Egy gyerek több csoportban is lehet (pl. a családban és az osztályban is).</p>
+                        <ul class="members" id="child-group-list"></ul>
+                        <form class="row" id="child-add-group" onsubmit="addChildToGroup(event)">
+                            <select id="child-target-group" aria-label="Csoport"></select>
+                            <button class="btn">➕ Hozzáadás</button>
+                            <button class="btn secondary" type="button" id="child-move-btn" onclick="moveChildToGroup()">➡️ Áthelyezés ide</button>
+                        </form>
+                    </div>
+                </details>
 
-        <section class="card" id="child-danger-card">
-            <h2>⚠️ Törlés</h2>
-            <div class="row">
-                <button class="btn danger" id="clear-stats-btn" onclick="clearChildStats()">Statisztika törlése</button>
-                <button class="btn danger" id="delete-child-btn" onclick="deleteChild()">Gyerek törlése</button>
+                <details class="setting" id="child-join-box">
+                    <summary>
+                        <span class="s-icon">🏫</span>
+                        <span class="s-text"><strong>Csatlakozás osztályhoz kóddal</strong><small>a tanártól kapott 6 jegyű kóddal</small></span>
+                    </summary>
+                    <div class="setting-body">
+                        <p class="muted">A gyerek az osztályba is bekerül. Az osztály tanárai látni fogják a gyerek eredményeit; te nem látod a többi gyereket, és ők sem látják a családodat.</p>
+                        <form class="row" onsubmit="joinClass(event)">
+                            <input id="join-code" maxlength="6" placeholder="ABC234" autocomplete="off"
+                                   oninput="this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '')">
+                            <button class="btn">Csatlakozás</button>
+                        </form>
+                        <p class="msg" id="join-msg"></p>
+                    </div>
+                </details>
+
+                <details class="setting" id="child-devices-card">
+                    <summary>
+                        <span class="s-icon">📱</span>
+                        <span class="s-text"><strong>Eszközök</strong><small id="device-sub"></small></span>
+                    </summary>
+                    <div class="setting-body">
+                        <p class="muted">A gyerek eszközén: Szorzótábla Mester → lent „☁️ Eszköz összekötése” → kód beírása. Egy kód 24 óráig érvényes és egyszer használható.</p>
+                        <ul class="members" id="device-list"></ul>
+                        <div class="row">
+                            <button class="btn" onclick="newDeviceCode()">🔑 Új eszköz-kód</button>
+                        </div>
+                        <div class="code-box" id="code-box" hidden>
+                            <div class="code" id="code-value"></div>
+                            <p class="muted" id="code-expiry"></p>
+                            <div class="row" style="justify-content:center">
+                                <button class="btn secondary" onclick="shareDeviceCode()">📤 Kód küldése a gyerek eszközére</button>
+                            </div>
+                        </div>
+                    </div>
+                </details>
+
+                <details class="setting" id="child-pin-card">
+                    <summary>
+                        <span class="s-icon">🔒</span>
+                        <span class="s-text"><strong>Gyerek-PIN</strong><small id="pin-sub"></small></span>
+                    </summary>
+                    <div class="setting-body">
+                        <p class="muted">Közös tableten hasznos: a gyerek induláskor a PIN-jével választja ki magát, így a testvérek nem gyakorolnak egymás nevében. Nem kötelező. A gyerek eszközén a következő szinkronnál érvényes.</p>
+                        <p class="msg" id="pin-status"></p>
+                        <form class="row" onsubmit="setChildPin(event)">
+                            <input id="child-pin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required
+                                   autocomplete="off" placeholder="4 számjegy">
+                            <button class="btn">PIN beállítása</button>
+                            <button class="btn secondary" type="button" id="pin-remove-btn" onclick="removeChildPin()">PIN kikapcsolása</button>
+                        </form>
+                    </div>
+                </details>
+
+                <details class="setting" id="child-edit-box">
+                    <summary>
+                        <span class="s-icon">✏️</span>
+                        <span class="s-text"><strong>Név és avatar</strong><small>csak becenév, valódi nevet ne</small></span>
+                    </summary>
+                    <div class="setting-body">
+                        <form class="row" onsubmit="saveChild(event)">
+                            <input id="edit-nickname" maxlength="30" required placeholder="Becenév">
+                            <button class="btn">Mentés</button>
+                        </form>
+                        <div class="avatars" id="edit-avatars"></div>
+                    </div>
+                </details>
+
+                <details class="setting danger" id="child-danger-card">
+                    <summary>
+                        <span class="s-icon">🗑️</span>
+                        <span class="s-text"><strong>Törlés</strong><small>a statisztika vagy a gyerek profilja – végleges</small></span>
+                    </summary>
+                    <div class="setting-body">
+                        <div class="row">
+                            <button class="btn danger" id="clear-stats-btn" onclick="clearChildStats()">Statisztika törlése</button>
+                            <button class="btn danger" id="delete-child-btn" onclick="deleteChild()">Gyerek törlése</button>
+                        </div>
+                    </div>
+                </details>
             </div>
         </section>
     </div>
-
-    <!-- Rövid adatkezelési tájékoztató (gyerekek adatairól van szó) -->
-    <section class="card">
-        <details>
-            <summary>🔒 Milyen adatot tárolunk?</summary>
-            <div class="muted" style="display:flex; flex-direction:column; gap:6px">
-                <p><strong>Felnőttek:</strong> az e-mail cím (a belépéshez) és hogy melyik csoport tagja.</p>
-                <p><strong>Gyerekek:</strong> csak becenév és avatar – valódi nevet, e-mail címet, születési dátumot nem kérünk.
-                    A gyakorlás eredményei: melyik feladat, elsőre jó / csonttal javított / hibás, a válaszidő és a tesztek százaléka.</p>
-                <p><strong>Ki látja:</strong> csak a gyerek csoportjának felnőtt tagjai és a gyerek saját, összekötött eszközei.
-                    Ezt az adatbázis szabályai biztosítják, nem csak a felület.</p>
-                <p><strong>Hol:</strong> a Supabase szolgáltatásnál, az Európai Unióban (Írország). Reklámra vagy bármi másra nem használjuk, harmadik félnek nem adjuk át.</p>
-                <p><strong>Törlés:</strong> a gyerek eredményei és profilja ezen a felületen bármikor törölhetők (a törlés végleges).
-                    Felnőtt fiók törlését a csoport tulajdonosánál vagy az app üzemeltetőjénél kérheted.</p>
-                <p>Összekötés nélkül a gyakorló app semmit nem küld sehova: minden csak az eszközön marad.</p>
-            </div>
-        </details>
-    </section>
 </div>
 <div class="toast" id="toast" hidden></div>
 <script src="szulo.js"></script>

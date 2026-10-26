@@ -28,7 +28,9 @@ Szorzótábla- és bennfoglalás-gyakorló web-app alsósoknak, tabletre és tel
 - **Közös tablet:** több gyerek is használhatja ugyanazt az eszközt. Induláskor „Ki gyakorol most?”, a gyerek-PIN nem kötelező.
 - **Szülő és tanár külön nézet:**
   - a szülő a gyerekeit látja elöl;
-  - a tanár az osztályait, közös feladat-térképpel. Ezen egy mezőre koppintva látszik, kinek kell még gyakorolnia.
+  - a tanár az osztályait, közös feladat-térképpel. Ezen egy mezőre koppintva látszik, kinek kell még gyakorolnia;
+  - fülek: 🏠 Családom / 🏫 Osztályaim / 🛡️ Admin / 👤 Fiók. Elöl a gyerekek és az eredmények, a beállítások összecsukható listában;
+  - a fejlécben látszik, milyen jogosultsággal (admin, szülő, tanár) vagy belépve.
 - **Osztály:**
   - a tanár csatlakozási kódot ad, a szülő azzal teszi be a gyerekét az osztályba;
   - a tanár szülőket is meghívhat;
