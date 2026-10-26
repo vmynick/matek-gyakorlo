@@ -214,6 +214,31 @@
             border-color: var(--primary);
         }
 
+        .members li .row {
+            flex-wrap: nowrap;
+            gap: 6px;
+        }
+
+        .members select {
+            flex: none;
+            padding: 4px 6px;
+            font-size: 0.85rem;
+        }
+
+        .group-actions {
+            font-size: 0.85rem;
+            gap: 12px;
+        }
+
+        .link.danger-link {
+            color: var(--danger);
+        }
+
+        .members li {
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
         details summary {
             cursor: pointer;
             font-weight: 700;
@@ -266,8 +291,15 @@
             gap: 6px;
         }
 
-        .heatmap-wrap {
-            height: min(420px, 80vw);
+        /* Itt nem kell a képernyő magasságához igazodni: a rács a szélességhez méreteződik, a doboz követi */
+        .heatmap-card .heatmap-wrap {
+            container-type: inline-size;
+            height: auto;
+            min-height: 0;
+        }
+
+        .heatmap-card .heatmap {
+            width: min(100%, 460px);
         }
 
         .op-toggle {
@@ -366,18 +398,30 @@
         </section>
 
         <section class="card" id="admin-card" hidden>
-            <h2>🛡️ Meghívás saját csoporttal</h2>
+            <h2>🛡️ Admin</h2>
+            <p><strong>Meghívás saját csoporttal</strong></p>
             <p class="muted">Tanár vagy szülő meghívása, aki saját csoportot (osztályt / családot) hozhat létre.</p>
             <form onsubmit="inviteCreator(event)">
                 <input type="email" id="creator-email" required placeholder="tanar@iskola.hu">
                 <button class="btn">Meghívás</button>
             </form>
             <p class="msg" id="creator-msg"></p>
+            <details id="admin-adults-box">
+                <summary>👥 Felnőttek kezelése</summary>
+                <p class="muted">Minden regisztrált felnőtt. A gyerekek eredményeibe innen nem látsz bele; a hozzáférés megvonása törli a fiókot (a csak az ő csoportjában lévő gyerekekkel együtt).</p>
+                <ul class="members" id="admin-adults"></ul>
+            </details>
         </section>
 
         <section class="card" id="pending-card" hidden>
             <h2>✉️ Elküldött meghívók</h2>
             <ul class="members" id="pending-list"></ul>
+        </section>
+
+        <section class="card">
+            <h2>👤 Fiókom</h2>
+            <p class="muted">A fiókod törlésekor kilépsz minden csoportból. Ahol rajtad kívül más is van, ő viszi tovább a csoportot (ha kell, tulajdonos lesz); ahol egyedül voltál, a csoport és a csak abban lévő gyerekek eredményei is törlődnek.</p>
+            <div class="row"><button class="btn danger" onclick="deleteMyAccount()">Saját fiók törlése</button></div>
         </section>
     </div>
 
@@ -386,7 +430,35 @@
         <div><button class="link" onclick="showHome()">← Vissza a csoportokhoz</button></div>
         <section class="card">
             <div class="child-head"><span id="child-avatar"></span><span id="child-name"></span></div>
-            <p class="muted" id="child-groups"></p>
+            <details>
+                <summary>✏️ Név és avatar módosítása</summary>
+                <form class="row" onsubmit="saveChild(event)">
+                    <input id="edit-nickname" maxlength="30" required placeholder="Becenév">
+                    <button class="btn">Mentés</button>
+                </form>
+                <div class="avatars" id="edit-avatars"></div>
+            </details>
+        </section>
+
+        <section class="card">
+            <h2>🏷️ Csoportok</h2>
+            <p class="muted">Egy gyerek több csoportban is lehet (pl. a családban és az osztályban is).</p>
+            <ul class="members" id="child-group-list"></ul>
+            <form class="row" id="child-add-group" onsubmit="addChildToGroup(event)">
+                <select id="child-target-group" aria-label="Csoport"></select>
+                <button class="btn">➕ Hozzáadás</button>
+                <button class="btn secondary" type="button" id="child-move-btn" onclick="moveChildToGroup()">➡️ Áthelyezés ide</button>
+            </form>
+            <details>
+                <summary>🏫 Csatlakozás osztályhoz kóddal</summary>
+                <p class="muted">A tanártól kapott 6 jegyű kóddal a gyerek az osztályba is bekerül. Az osztály tanárai látni fogják a gyerek eredményeit; te nem látod a többi gyereket, és ők sem látják a családodat.</p>
+                <form class="row" onsubmit="joinClass(event)">
+                    <input id="join-code" maxlength="6" placeholder="ABC234" autocomplete="off"
+                           oninput="this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '')">
+                    <button class="btn">Csatlakozás</button>
+                </form>
+                <p class="msg" id="join-msg"></p>
+            </details>
         </section>
 
         <section class="card">
