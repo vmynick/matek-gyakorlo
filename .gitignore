@@ -1,0 +1,6 @@
+node_modules/
+
+# Csak a helyi (otthoni szerveres) telepítéshez kell, nem része az appnak
+deploy/
+deploy.ps1
+szorzotabla_old.html

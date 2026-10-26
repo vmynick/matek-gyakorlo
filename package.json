@@ -1,0 +1,10 @@
+{
+  "name": "matek-gyakorlo",
+  "private": true,
+  "scripts": {
+    "test": "node tests/szorzotabla.test.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "1.64.0"
+  }
+}

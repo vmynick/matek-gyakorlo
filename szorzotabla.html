@@ -1,0 +1,2111 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Szorzótábla Mester</title>
+    <!-- Telepíthető app (kezdőképernyő ikon, offline működés) -->
+    <meta name="theme-color" content="#4f46e5">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Szorzótábla">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" href="icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <script>
+        // Sötét / világos mód még a megjelenés előtt, hogy ne villanjon fel a rossz szín.
+        // Alapból a készülék beállítását követi; a 🌙/☀️ gombbal választott mód felülírja.
+        (function () {
+            let saved = null;
+            try { saved = localStorage.getItem('szorzo_theme'); } catch (e) { /* tároló nélkül is megy */ }
+            const dark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+            document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+        })();
+    </script>
+    <!-- Chart.js 4.6.1 a vizuális grafikonhoz (helyi másolat, internet nélkül is megy) -->
+    <script src="vendor/chart.umd.min.js"></script>
+    <!-- Canvas Confetti 1.6.0 a sikerélményhez (helyi másolat) -->
+    <script src="vendor/confetti.browser.min.js"></script>
+    <style>
+        :root {
+            --primary: #4f46e5;
+            --primary-hover: #4338ca;
+            --secondary: #06b6d4;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --bg-grad-1: #e0e7ff;
+            --bg-grad-2: #c7d2fe;
+            --card-bg: #ffffff;
+            --text-dark: #1e293b;
+            --text-muted: #64748b;
+            --primary-text: #4f46e5; /* lila szöveg (sötét módban világosabb, hogy olvasható legyen) */
+            --surface: #f8fafc; /* kártyák a kártyán belül */
+            --surface-2: #f1f5f9; /* fülsáv, számbillentyűk */
+            --raised: #ffffff; /* kiemelt elemek: aktív fül, gombok, dobozok */
+            --input-bg: #ffffff; /* a válasz mezője */
+            --border: #e2e8f0;
+            --border-strong: #cbd5e1;
+            --selected-bg: #eef2ff;
+            --danger-bg: #fee2e2;
+            --danger-border: #fca5a5;
+            --warn-bg: #fffbeb;
+            --warn-text: #b45309;
+            --hm-none-bg: #e2e8f0;
+            --hm-none-text: #94a3b8;
+            --border-radius: 20px;
+        }
+
+        /* Sötét mód: a színek felülírása (a data-theme-et a fejlécben lévő szkript állítja) */
+        :root[data-theme="dark"] {
+            color-scheme: dark;
+            --bg-grad-1: #0b1120;
+            --bg-grad-2: #1e1b4b;
+            --card-bg: #111a2e;
+            --text-dark: #e2e8f0;
+            --text-muted: #94a3b8;
+            --primary-text: #a5b4fc;
+            --surface: #1a2438;
+            --surface-2: #243049;
+            --raised: #2b3954;
+            --input-bg: #0b1120;
+            --border: #2f3d57;
+            --border-strong: #46546f;
+            --selected-bg: #2a2a6a;
+            --danger-bg: #4c1d1d;
+            --danger-border: #7f2d2d;
+            --warn-bg: #3b2a0a;
+            --warn-text: #fbbf24;
+            --hm-none-bg: #2b3954;
+            --hm-none-text: #6b7a94;
+        }
+
+        * {
+            box-sizing: border-box;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background: linear-gradient(135deg, var(--bg-grad-1), var(--bg-grad-2));
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: var(--page-pad);
+            color: var(--text-dark);
+        }
+
+        :root {
+            --page-pad: 15px;
+        }
+
+        .app-container {
+            width: 100%;
+            max-width: 800px;
+            background: var(--card-bg);
+            border-radius: var(--border-radius);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            padding: 25px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Hangszóró kapcsoló gomb (jobb felső sarok) */
+        .sound-toggle-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: var(--surface-2);
+            border: 2px solid var(--border);
+            border-radius: 50%;
+            width: 44px;
+            height: 44px;
+            font-size: 1.3rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 100;
+            transition: all 0.2s;
+        }
+
+        .sound-toggle-btn.muted {
+            background: var(--danger-bg);
+            border-color: var(--danger-border);
+        }
+
+        .sound-toggle-btn:active {
+            transform: scale(0.9);
+        }
+
+        /* Navigáció / Tabok */
+        .tab-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            margin-right: 104px; /* Hely a sötét mód és a hangszóró gombnak */
+            background: var(--surface-2);
+            padding: 6px;
+            border-radius: 14px;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            background: transparent;
+            font-weight: 700;
+            font-size: 1rem;
+            color: var(--text-muted);
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .tab-btn.active {
+            background: var(--raised);
+            color: var(--primary-text);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+        }
+
+        /* Telefonon a fülek rövid felirata, hogy ne törjön három sorba */
+        @media (max-width: 599px) {
+            .tab-long { display: none; }
+        }
+
+        .screen {
+            display: none;
+        }
+
+        .screen.active {
+            display: block;
+        }
+
+        /* Fejléc */
+        h1 {
+            text-align: center;
+            font-size: 1.8rem;
+            color: var(--primary-text);
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        /* Üzemmód választó (Gyakorló vs Szülői Kikérdező) */
+        .mode-selector {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .mode-card {
+            border: 2px solid var(--border);
+            border-radius: 14px;
+            padding: 14px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: var(--surface);
+        }
+
+        .mode-card.selected {
+            border-color: var(--primary);
+            background: var(--selected-bg);
+        }
+
+        /* Telefonon a harmadik kártya (Hibák gyakorlása) teljes szélességű */
+        .mode-card.mode-wide {
+            grid-column: 1 / -1;
+        }
+
+        /* Művelet választó (szorzás / osztás / vegyes) */
+        .op-selector {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+
+        .mode-card h3 {
+            font-size: 1.1rem;
+            color: var(--primary-text);
+            margin-bottom: 4px;
+        }
+
+        .mode-card p {
+            font-size: 0.82rem;
+            color: var(--text-muted);
+        }
+
+        /* Szorzótábla gombok (0-10) */
+        .section-label {
+            font-weight: 700;
+            margin-bottom: 10px;
+            color: var(--text-dark);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .grid-tables {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(65px, 1fr));
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .btn-table-select {
+            aspect-ratio: 1;
+            border: 2px solid var(--border);
+            background: var(--surface);
+            border-radius: 12px;
+            font-weight: 800;
+            font-size: 1.3rem;
+            color: var(--text-dark);
+            cursor: pointer;
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-table-select.selected {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+            transform: scale(1.05);
+            box-shadow: 0 4px 10px rgba(79, 70, 229, 0.3);
+        }
+
+        /* Beállítások kártya */
+        .settings-card {
+            background: var(--surface);
+            padding: 15px;
+            border-radius: 14px;
+            margin-bottom: 20px;
+        }
+
+        .count-selector {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .btn-count, .btn-op {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid var(--border-strong);
+            background: var(--raised);
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .btn-count.selected {
+            background: var(--secondary);
+            color: white;
+            border-color: var(--secondary);
+        }
+
+        .btn-op {
+            padding: 10px 4px;
+            font-size: 0.95rem;
+            white-space: nowrap;
+        }
+
+        .btn-op.selected {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+
+        /* Fő Start Gomb */
+        .btn-start {
+            width: 100%;
+            padding: 16px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            border: none;
+            border-radius: 14px;
+            font-size: 1.3rem;
+            font-weight: 800;
+            cursor: pointer;
+            box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.4);
+            transition: transform 0.1s;
+        }
+
+        .btn-start:active {
+            transform: scale(0.98);
+        }
+
+        /* Teszt Képernyő */
+        .quiz-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            background: var(--surface);
+            padding: 12px 18px;
+            border-radius: 14px;
+        }
+
+        .stat-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 700;
+            font-size: 1.1rem;
+        }
+
+        .progress-bar-bg {
+            width: 100%;
+            height: 10px;
+            background: var(--border);
+            border-radius: 5px;
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: var(--primary);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        /* Kérdés Kártya */
+        .question-card {
+            text-align: center;
+            padding: 20px;
+            background: var(--surface);
+            border-radius: 16px;
+            margin-bottom: 20px;
+            border: 2px solid var(--border);
+        }
+
+        .expression {
+            font-size: 3.2rem;
+            font-weight: 900;
+            color: var(--text-dark);
+            letter-spacing: 2px;
+        }
+
+        .answer-display {
+            display: inline-block;
+            min-width: 90px;
+            height: 60px;
+            border-bottom: 4px solid var(--primary);
+            font-size: 3rem;
+            font-weight: 800;
+            color: var(--primary-text);
+            line-height: 60px;
+            margin-left: 10px;
+            vertical-align: middle;
+            background: var(--input-bg);
+            border-radius: 8px 8px 0 0;
+            padding: 0 10px;
+        }
+
+        .feedback-msg {
+            min-height: 24px; /* telefonon a csontos üzenet két sorba törik */
+            font-weight: 700;
+            font-size: 1.1rem;
+            margin-top: 8px;
+        }
+
+        .feedback-correct { color: var(--success); }
+        .feedback-wrong { color: var(--danger); }
+        .feedback-bone { color: var(--warning); }
+
+        /* Virtuális számbillentyűzet tabletre */
+        .numpad {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            max-width: 380px;
+            margin: 0 auto;
+        }
+
+        .btn-num {
+            padding: 16px;
+            font-size: 1.8rem;
+            font-weight: 700;
+            border: none;
+            background: var(--surface-2);
+            color: var(--text-dark);
+            border-radius: 14px;
+            cursor: pointer;
+            box-shadow: 0 4px 0 var(--border-strong);
+            transition: all 0.05s;
+        }
+
+        .btn-num:active {
+            transform: translateY(4px);
+            box-shadow: none;
+        }
+
+        .btn-num.action-del {
+            background: var(--danger-bg);
+            color: var(--danger);
+            box-shadow: 0 4px 0 var(--danger-border);
+        }
+
+        .btn-num.action-submit {
+            background: var(--success);
+            color: white;
+            box-shadow: 0 4px 0 #059669;
+            white-space: nowrap;
+            padding-left: 6px;
+            padding-right: 6px;
+            font-size: 1.5rem;
+        }
+
+        /* Eredmény Képernyő & Szülői Értékelő */
+        .results-summary {
+            text-align: center;
+        }
+
+        .score-circle {
+            width: 140px;
+            height: 140px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+            box-shadow: 0 10px 20px rgba(79, 70, 229, 0.3);
+        }
+
+        .score-circle .pct {
+            font-size: 2.5rem;
+            font-weight: 900;
+        }
+
+        .score-circle .label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+        }
+
+        .parent-card {
+            background: var(--surface);
+            border: 2px dashed var(--border-strong);
+            border-radius: 16px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: left;
+        }
+
+        .parent-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 10px;
+            margin-bottom: 12px;
+        }
+
+        .badge-mode {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: white;
+            background: var(--primary);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+
+        .stat-item {
+            background: var(--raised);
+            padding: 10px;
+            border-radius: 10px;
+            text-align: center;
+            border: 1px solid var(--border);
+        }
+
+        .stat-item .val {
+            font-size: 1.3rem;
+            font-weight: 800;
+        }
+
+        .stat-item .lbl {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .mistake-list {
+            max-height: 120px;
+            overflow-y: auto;
+            background: var(--raised);
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            font-size: 0.9rem;
+        }
+
+        /* Fejlődés fül: az egész kimutatás férjen ki egy képernyőre, görgetés nélkül */
+        .app-container.fit-screen {
+            height: calc(100vh - 2 * var(--page-pad));
+            height: calc(100dvh - 2 * var(--page-pad));
+            display: flex;
+            flex-direction: column;
+        }
+
+        .app-container.fit-screen > .tab-bar {
+            flex: none;
+        }
+
+        #screen-stats.active {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            overflow-y: auto; /* nagyon alacsony képernyőn inkább görgessen, mint hogy levágjon */
+        }
+
+        #screen-stats .stats-title {
+            font-size: 1.4rem;
+            margin-bottom: 0;
+        }
+
+        .stats-body {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .stats-left {
+            flex: none;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .chart-container {
+            position: relative;
+            height: clamp(110px, 16vh, 220px);
+            width: 100%;
+        }
+
+        .btn-clear {
+            flex: none;
+            background: none;
+            border: none;
+            color: var(--danger);
+            font-size: 0.8rem;
+            cursor: pointer;
+            text-decoration: underline;
+            display: block;
+            margin: 0 auto;
+        }
+
+        /* Feladat-térkép (hőtérkép a szülőknek) */
+        .heatmap-card {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            background: var(--surface);
+            border-radius: 16px;
+            padding: 10px;
+        }
+
+        .hm-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.9rem;
+        }
+
+        .hm-toolbar .op-selector {
+            margin: 0;
+            gap: 6px;
+        }
+
+        .hm-toolbar .btn-op {
+            flex: none;
+            padding: 6px 10px;
+            font-size: 0.8rem;
+        }
+
+        /* A rács akkora, amekkora hely jut neki (szélesség és magasság közül a kisebb) */
+        .heatmap-wrap {
+            flex: 1;
+            min-height: 150px;
+            container-type: size;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+        }
+
+        .heatmap {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 2px;
+            width: min(100cqw, calc((100cqh - 4px) * 12 / var(--hm-rows, 12)), 560px);
+            container-type: inline-size;
+        }
+
+        .hm-cell {
+            aspect-ratio: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: clamp(0.5rem, 2.8cqw, 0.85rem);
+            font-weight: 700;
+            border: none;
+            border-radius: 4px;
+            padding: 0;
+            position: relative;
+            cursor: pointer;
+            color: #1e293b;
+        }
+
+        .hm-head {
+            background: transparent;
+            color: var(--primary-text);
+            font-size: clamp(0.6rem, 3.4cqw, 1rem);
+            font-weight: 800;
+            cursor: default;
+        }
+
+        .hm-none { background: var(--hm-none-bg); color: var(--hm-none-text); }
+        .hm-l0 { background: #ef4444; color: #fff; }
+        .hm-l1 { background: #fb923c; }
+        .hm-l2 { background: #fcd34d; }
+        .hm-l3 { background: #86efac; }
+        .hm-l4 { background: #10b981; color: #fff; }
+
+        /* Lassú válasz: kis pötty a mező sarkában */
+        .hm-cell.slow::after, .hm-slow-dot::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: #1e293b;
+        }
+
+        .hm-cell.selected {
+            outline: 3px solid var(--primary);
+            outline-offset: 1px;
+            z-index: 1;
+        }
+
+        .hm-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px 10px;
+            justify-content: center;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+        }
+
+        .hm-legend i {
+            display: inline-block;
+            width: 11px;
+            height: 11px;
+            border-radius: 3px;
+            vertical-align: -2px;
+            margin: 0 1px;
+            position: relative;
+        }
+
+        .hm-slow-dot { background: #fcd34d; } /* színes minta, hogy a sötét pötty mindkét módban látsszon */
+
+        /* Fix magasság: koppintáskor ne ugráljon a rács mérete */
+        .hm-detail {
+            flex: none;
+            background: var(--raised);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 6px 10px;
+            font-size: 0.78rem;
+            line-height: 1.5; /* az emojik miatt kell a nagyobb sormagasság */
+            height: calc(3 * 1.5em + 14px); /* 3 sor + padding + keret */
+            overflow: hidden;
+        }
+
+        .weak-summary {
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .btn-weak-go {
+            margin-left: 8px;
+            padding: 6px 12px;
+            border: none;
+            border-radius: 8px;
+            background: var(--warning);
+            color: white;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        /* Szülői PIN ablak (statisztika törléséhez) */
+        .pin-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.55);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            z-index: 1000;
+        }
+
+        .pin-overlay[hidden] {
+            display: none;
+        }
+
+        .pin-box {
+            background: var(--card-bg);
+            border-radius: var(--border-radius);
+            padding: 20px;
+            width: 100%;
+            max-width: 340px;
+            text-align: center;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+        }
+
+        .pin-box h3 {
+            color: var(--primary-text);
+            margin-bottom: 6px;
+        }
+
+        .pin-msg {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            min-height: 2.6em;
+        }
+
+        .pin-msg.error {
+            color: var(--danger);
+            font-weight: 700;
+        }
+
+        .pin-dots {
+            display: flex;
+            justify-content: center;
+            gap: 14px;
+            margin: 10px 0 16px;
+        }
+
+        .pin-dots i {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            border: 2px solid var(--primary);
+        }
+
+        .pin-dots i.filled {
+            background: var(--primary);
+        }
+
+        .pin-box .numpad {
+            gap: 10px;
+        }
+
+        .pin-box .btn-num {
+            padding: 12px;
+            font-size: 1.5rem;
+        }
+
+        .pin-box .btn-num.pin-cancel {
+            font-size: 0.95rem;
+        }
+
+        /* Sötét mód kapcsoló: a hangszóró gomb mellett */
+        .sound-toggle-btn.theme-toggle-btn {
+            right: 72px;
+        }
+
+        /* Frissítés jelzése és rövid üzenetek (alul középen) */
+        .update-banner, .toast {
+            position: fixed;
+            left: 50%;
+            bottom: 16px;
+            transform: translateX(-50%);
+            width: max-content;
+            max-width: calc(100% - 32px);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: var(--text-dark);
+            color: var(--card-bg);
+            padding: 10px 14px;
+            border-radius: 14px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+            z-index: 900;
+        }
+
+        .update-banner[hidden], .toast[hidden] {
+            display: none;
+        }
+
+        .update-banner button {
+            flex: none;
+            border: none;
+            border-radius: 8px;
+            padding: 6px 12px;
+            background: var(--secondary);
+            color: white;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        /* Telefonon kisebb margók, hogy több hely jusson a tartalomnak */
+        @media (max-width: 599px) {
+            :root { --page-pad: 8px; }
+            .app-container { padding: 16px; }
+            .tab-bar { margin-bottom: 12px; margin-right: 90px; gap: 6px; }
+            .tab-btn { padding: 10px 6px; font-size: 0.9rem; }
+            .sound-toggle-btn { top: 18px; right: 14px; width: 40px; height: 40px; font-size: 1.15rem; }
+            .sound-toggle-btn.theme-toggle-btn { right: 60px; }
+            #screen-stats .stats-title { font-size: 1.2rem; }
+            .chart-container { height: clamp(90px, 14vh, 160px); }
+            .hm-toolbar { font-size: 0.85rem; }
+            .hm-toolbar .btn-op { padding: 5px 8px; font-size: 0.75rem; }
+            .hm-legend { gap: 4px 8px; }
+        }
+
+        /* Fekvő tableten / laptopon a grafikon és a térkép egymás mellett */
+        @media (min-width: 700px) and (min-aspect-ratio: 5/4) {
+            .stats-body { flex-direction: row; }
+            .stats-left { flex: 1; min-width: 0; }
+            .stats-left .chart-container { flex: 1; height: auto; min-height: 150px; }
+            .heatmap-card { min-width: 0; }
+        }
+
+        /* Reszponzív optimalizációk tabletre */
+        @media (min-width: 600px) {
+            .app-container { padding: 35px; }
+            .mode-selector { grid-template-columns: repeat(3, 1fr); }
+            .mode-card.mode-wide { grid-column: auto; }
+            .grid-tables { grid-template-columns: repeat(6, 1fr); }
+            .expression { font-size: 4rem; }
+            .answer-display { min-width: 110px; height: 70px; font-size: 3.5rem; line-height: 70px; }
+            .btn-num { padding: 20px; font-size: 2rem; }
+            .btn-num.action-submit { font-size: 2rem; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+
+    <!-- Hangszóró kapcsoló gomb -->
+    <button class="sound-toggle-btn" id="sound-btn" onclick="toggleSound()" title="Hangok ki/be kapcsolása">🔊</button>
+    <button class="sound-toggle-btn theme-toggle-btn" id="theme-btn" onclick="toggleTheme()" title="Sötét / világos mód">🌙</button>
+
+    <!-- Felső Fül Navigáció -->
+    <div class="tab-bar">
+        <button class="tab-btn active" onclick="switchTab('setup')">🎮 Gyakorlás<span class="tab-long">& Kikérdezés</span></button>
+        <button class="tab-btn" onclick="switchTab('stats')">📈 Fejlődés<span class="tab-long">& Statisztika</span></button>
+    </div>
+
+    <!-- 1. BEÁLLÍTÁSOK KÉPERNYŐ -->
+    <div id="screen-setup" class="screen active">
+        <h1>✨ Szorzótábla Mester</h1>
+
+        <!-- Üzemmód választás -->
+        <div class="mode-selector">
+            <div class="mode-card selected" id="mode-practice" onclick="setMode('practice')">
+                <h3>🎈 Gyakorló Mód</h3>
+                <p>Csontos javítási lehetőség (3×), választott feladatszám.</p>
+            </div>
+            <div class="mode-card" id="mode-exam" onclick="setMode('exam')">
+                <h3>👨‍👩‍👧 Szülői Kikérdező</h3>
+                <p>Szigorú teszt (nincs csont), minden feladat 1× szerepel.</p>
+            </div>
+            <div class="mode-card mode-wide" id="mode-weak" onclick="setMode('weak')">
+                <h3>🎯 Hibák Gyakorlása</h3>
+                <p>A korábban rontott feladatok újra. Most <strong id="weak-count-card">0</strong> feladat vár.</p>
+            </div>
+        </div>
+
+        <div id="table-picker">
+            <!-- Művelet választás -->
+            <div class="section-label">Művelet:</div>
+            <div class="op-selector">
+                <button class="btn-op selected" onclick="setOp('mul', this)"><b>×</b> Szorzás</button>
+                <button class="btn-op" onclick="setOp('div', this)">➗ Osztás</button>
+                <button class="btn-op" onclick="setOp('mix', this)">🔀 Vegyes</button>
+            </div>
+
+            <!-- Tábla Kiválasztó (0-10) -->
+            <div class="section-label">
+                <span>Válaszd ki a táblákat:</span>
+                <button onclick="toggleAllTables()" style="border:none; background:none; color: var(--primary-text); font-weight:700; cursor:pointer; font-size:0.85rem;">Mind / Egyik sem</button>
+            </div>
+            <div class="grid-tables" id="tables-grid">
+                <!-- JS generálja a 0-10 gombokat -->
+            </div>
+        </div>
+
+        <!-- Beállítások panel -->
+        <div class="settings-card" id="practice-settings">
+            <div class="section-label">Feladatok száma:</div>
+            <div class="count-selector">
+                <button class="btn-count" onclick="setCount(10, this)">10 db</button>
+                <button class="btn-count selected" onclick="setCount(20, this)">20 db</button>
+                <button class="btn-count" onclick="setCount(30, this)">30 db</button>
+                <button class="btn-count" onclick="setCount('all', this)">Összes</button>
+            </div>
+        </div>
+
+        <div class="settings-card" id="exam-settings" style="display: none; background: var(--selected-bg);">
+            <p style="font-size:0.9rem; color: var(--primary-text); text-align:center; font-weight:600;" id="exam-task-info">
+                ℹ️ A Kikérdező módban a válogatott táblák minden szorzata (0-10) pontosan egyszer szerepel.
+            </p>
+        </div>
+
+        <div class="settings-card" id="weak-settings" style="display: none; background: var(--warn-bg);">
+            <p style="font-size:0.9rem; color:var(--warn-text); text-align:center; font-weight:600;" id="weak-task-info"></p>
+        </div>
+
+        <button class="btn-start" onclick="startQuiz()">Kezdés! 🚀</button>
+    </div>
+
+    <!-- 2. KIKÉRDEZŐ / TESZT KÉPERNYŐ -->
+    <div id="screen-quiz" class="screen">
+        <div class="quiz-header">
+            <div class="stat-badge" title="Helyes válaszok">✅ <span id="quiz-score">0</span></div>
+            <div class="stat-badge" title="Hibák">❌ <span id="quiz-errors">0</span></div>
+            <div class="stat-badge" id="bone-badge" title="Még felhasználható javító csontok">🦴 <span id="quiz-bones">3</span></div>
+        </div>
+
+        <div class="progress-bar-bg">
+            <div class="progress-bar-fill" id="quiz-progress"></div>
+        </div>
+
+        <div class="question-card">
+            <div class="expression">
+                <span id="q-factor1">4</span> <span id="q-op">×</span> <span id="q-factor2">7</span> =
+                <span class="answer-display" id="user-answer"></span>
+            </div>
+            <div class="feedback-msg" id="feedback">&nbsp;</div>
+        </div>
+
+        <!-- Virtuális Érintőbillentyűzet -->
+        <div class="numpad">
+            <button class="btn-num" onclick="appendNum(1)">1</button>
+            <button class="btn-num" onclick="appendNum(2)">2</button>
+            <button class="btn-num" onclick="appendNum(3)">3</button>
+            <button class="btn-num" onclick="appendNum(4)">4</button>
+            <button class="btn-num" onclick="appendNum(5)">5</button>
+            <button class="btn-num" onclick="appendNum(6)">6</button>
+            <button class="btn-num" onclick="appendNum(7)">7</button>
+            <button class="btn-num" onclick="appendNum(8)">8</button>
+            <button class="btn-num" onclick="appendNum(9)">9</button>
+            <button class="btn-num action-del" onclick="deleteDigit()">⌫</button>
+            <button class="btn-num" onclick="appendNum(0)">0</button>
+            <button class="btn-num action-submit" onclick="submitAnswer()">OK ➔</button>
+        </div>
+    </div>
+
+    <!-- 3. EREDMÉNY KÉPERNYŐ -->
+    <div id="screen-results" class="screen">
+        <h1 id="res-title">🎉 Szép munka!</h1>
+
+        <div class="results-summary">
+            <div class="score-circle">
+                <span class="pct" id="res-pct">100%</span>
+                <span class="label" id="res-grade">Kiváló!</span>
+            </div>
+
+            <!-- Szülői Felmutató Kártya -->
+            <div class="parent-card">
+                <div class="parent-card-header">
+                    <strong>📋 Eredménykimutatás Szülőknek</strong>
+                    <span class="badge-mode" id="res-mode-badge">Gyakorló</span>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="val" id="res-total">0/0</div>
+                        <div class="lbl">Helyes válasz</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="val" id="res-errors" style="color:var(--danger)">0</div>
+                        <div class="lbl">Rontott válasz</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="val" id="res-bones-used" style="color:var(--warning)">0</div>
+                        <div class="lbl">Csontos javítás</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="val" id="res-time">00:00</div>
+                        <div class="lbl">Eltelt idő</div>
+                    </div>
+                </div>
+
+                <div style="font-weight:700; font-size:0.85rem; margin-bottom:5px;">Kijavítandó feladatok:</div>
+                <div class="mistake-list" id="res-mistakes-list">
+                    <em>Nincs hibás válasz, szuper! 🎉</em>
+                </div>
+
+                <div id="res-bones-section" style="display: none;">
+                    <div style="font-weight:700; font-size:0.85rem; margin:12px 0 5px;">Csonttal javítva (elsőre nem ment):</div>
+                    <div class="mistake-list" id="res-bones-list"></div>
+                </div>
+            </div>
+
+            <button class="btn-start" onclick="switchTab('setup')">Új Teszt Indítása 🔄</button>
+        </div>
+    </div>
+
+    <!-- 4. STATISZTIKA & FEJLŐDÉS KÉPERNYŐ -->
+    <div id="screen-stats" class="screen">
+        <h1 class="stats-title">📊 Fejlődési Kimutatás</h1>
+
+        <div class="stats-body">
+            <div class="stats-left">
+                <div class="chart-container">
+                    <canvas id="progressChart"></canvas>
+                </div>
+                <div class="weak-summary" id="weak-summary"></div>
+            </div>
+
+            <!-- Feladat-térkép: melyik feladat megy és melyik nem -->
+            <div class="heatmap-card">
+                <div class="hm-toolbar">
+                    <strong>🗺️ Feladat-térkép</strong>
+                    <div class="op-selector">
+                        <button class="btn-op selected" onclick="setHeatmapOp('mul', this)"><b>×</b> Szorzás</button>
+                        <button class="btn-op" onclick="setHeatmapOp('div', this)">➗ Osztás</button>
+                    </div>
+                </div>
+                <div class="heatmap-wrap">
+                    <div class="heatmap" id="heatmap"></div>
+                </div>
+                <div class="hm-legend">
+                    <span>nem megy <i class="hm-l0"></i><i class="hm-l1"></i><i class="hm-l2"></i><i class="hm-l3"></i><i class="hm-l4"></i> biztos</span>
+                    <span><i class="hm-none"></i> még nem volt</span>
+                    <span title="átlagosan 6 másodpercnél lassabb válasz"><i class="hm-slow-dot"></i> lassú</span>
+                </div>
+                <div class="hm-detail" id="hm-detail"></div>
+            </div>
+        </div>
+
+        <button class="btn-clear" onclick="clearHistory()">🔒 Statisztikai előzmények törlése</button>
+    </div>
+
+</div>
+
+<!-- Új verzió jelzése (magától frissít, teszt közben nem) -->
+<div class="update-banner" id="update-banner" hidden>
+    <span id="update-text">✨ Új verzió érhető el!</span>
+    <button onclick="applyUpdate()">Frissítés most</button>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<!-- Szülői PIN: a statisztikát csak a szülő törölheti -->
+<div class="pin-overlay" id="pin-overlay" hidden>
+    <div class="pin-box" role="dialog" aria-modal="true" aria-labelledby="pin-title">
+        <h3 id="pin-title">👨‍👩‍👧 Szülői PIN</h3>
+        <p class="pin-msg" id="pin-msg"></p>
+        <div class="pin-dots" id="pin-dots"><i></i><i></i><i></i><i></i></div>
+        <div class="numpad">
+            <button class="btn-num" onclick="pinPress(1)">1</button>
+            <button class="btn-num" onclick="pinPress(2)">2</button>
+            <button class="btn-num" onclick="pinPress(3)">3</button>
+            <button class="btn-num" onclick="pinPress(4)">4</button>
+            <button class="btn-num" onclick="pinPress(5)">5</button>
+            <button class="btn-num" onclick="pinPress(6)">6</button>
+            <button class="btn-num" onclick="pinPress(7)">7</button>
+            <button class="btn-num" onclick="pinPress(8)">8</button>
+            <button class="btn-num" onclick="pinPress(9)">9</button>
+            <button class="btn-num pin-cancel" onclick="closePin()">Mégse</button>
+            <button class="btn-num" onclick="pinPress(0)">0</button>
+            <button class="btn-num action-del" onclick="pinDelete()">⌫</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    /* --- ALAPAPPLIKÁCIÓ ÁLLAPOT --- */
+    let selectedTables = []; // Egyik sincs kijelölve az elején
+    let currentMode = 'practice'; // 'practice', 'exam' vagy 'weak' (hibák gyakorlása)
+    let currentOp = 'mul'; // 'mul' (szorzás), 'div' (osztás) vagy 'mix' (vegyes)
+    let heatmapOp = 'mul'; // a feladat-térképen mutatott művelet
+    let questionCountSetting = 20; // 10, 20, 30, vagy 'all'
+    let soundEnabled = true; // Hangok állapota
+    
+    // Aktuális futó teszt állapota
+    let quizDeck = [];
+    let currentQuestionIndex = 0;
+    let score = 0;
+    let errorsCount = 0;
+    let bonesLeft = 3;
+    let bonesUsed = 0;
+    let mistakesList = [];
+    let bonesList = []; // csonttal javított feladatok a szülői kimutatáshoz
+    let currentAnswerInput = "";
+    let isBoneRetryState = false;
+    let boneFirstAnswer = null; // a csont előtti (rossz) válasz
+    let questionShownAt = 0; // válaszidő méréséhez
+    let firstAnswerMs = null;
+    let inputLocked = false; // válasz után a következő feladatig nem fogad bevitelt (dupla OK ellen)
+    let quizRunId = 0; // kilépéskor / új tesztnél a régi időzítők érvénytelenné válnak
+    let startTime = null;
+    let chartInstance = null;
+
+    // Hang effektek (Web Audio API)
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    
+    function toggleSound() {
+        soundEnabled = !soundEnabled;
+        localStorage.setItem('szorzo_sound', soundEnabled ? '1' : '0');
+        updateSoundButton();
+        if (soundEnabled) playSound('click');
+    }
+
+    function updateSoundButton() {
+        const btn = document.getElementById('sound-btn');
+        if (soundEnabled) {
+            btn.innerText = '🔊';
+            btn.classList.remove('muted');
+        } else {
+            btn.innerText = '🔇';
+            btn.classList.add('muted');
+        }
+    }
+
+    function playSound(type) {
+        if (!soundEnabled) return; // Néma üzemmód ellenőrzése
+        
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        const now = audioCtx.currentTime;
+        if (type === 'click') {
+            // Billentyű gomb kattanás hang
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(600, now);
+            osc.frequency.exponentialRampToValueAtTime(200, now + 0.05);
+            gain.gain.setValueAtTime(0.15, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
+            osc.start(now);
+            osc.stop(now + 0.05);
+        } else if (type === 'delete') {
+            // Törlés gomb hang
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(300, now);
+            osc.frequency.exponentialRampToValueAtTime(150, now + 0.08);
+            gain.gain.setValueAtTime(0.15, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
+            osc.start(now);
+            osc.stop(now + 0.08);
+        } else if (type === 'correct') {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(523.25, now); // C5
+            osc.frequency.exponentialRampToValueAtTime(659.25, now + 0.15); // E5
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+            osc.start(now);
+            osc.stop(now + 0.3);
+        } else if (type === 'wrong') {
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(180, now);
+            osc.frequency.linearRampToValueAtTime(110, now + 0.2);
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.linearRampToValueAtTime(0.01, now + 0.25);
+            osc.start(now);
+            osc.stop(now + 0.25);
+        } else if (type === 'bone') {
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(350, now);
+            osc.frequency.exponentialRampToValueAtTime(450, now + 0.15);
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.linearRampToValueAtTime(0.01, now + 0.2);
+            osc.start(now);
+            osc.stop(now + 0.2);
+        }
+    }
+
+    // Inicializálás
+    window.onload = function() {
+        importMigratedData();
+        tryUpgradeToHttps();
+        registerServiceWorker();
+
+        // Hang beállítás betöltése
+        const savedSound = localStorage.getItem('szorzo_sound');
+        if (savedSound !== null) {
+            soundEnabled = savedSound === '1';
+        }
+        updateSoundButton();
+
+        applyTheme(document.documentElement.dataset.theme);
+        renderTableSelector();
+        restoreAfterUpdate();
+        updateSetupInfo();
+
+        // Fizikai billentyűzet támogatás
+        window.addEventListener('keydown', handlePhysicalKeyboard);
+    };
+
+    /* --- BEÁLLÍTÁSOK KEZELÉSE --- */
+    // Magyar rag a szám kiejtése szerint: 0-s, 3-as, 5-ös, 6-os...
+    const TABLE_SUFFIX = ['s', 'es', 'es', 'as', 'es', 'ös', 'os', 'es', 'as', 'es', 'es'];
+
+    function renderTableSelector() {
+        const grid = document.getElementById('tables-grid');
+        grid.innerHTML = '';
+        for (let i = 0; i <= 10; i++) {
+            const btn = document.createElement('button');
+            btn.className = `btn-table-select ${selectedTables.includes(i) ? 'selected' : ''}`;
+            btn.innerText = `${i}-${TABLE_SUFFIX[i]}`;
+            btn.onclick = () => toggleTable(i);
+            grid.appendChild(btn);
+        }
+    }
+
+    function toggleTable(num) {
+        playSound('click');
+        if (selectedTables.includes(num)) {
+            selectedTables = selectedTables.filter(t => t !== num);
+        } else {
+            selectedTables.push(num);
+            selectedTables.sort((a,b) => a - b);
+        }
+        renderTableSelector();
+        updateSetupInfo();
+    }
+
+    function toggleAllTables() {
+        playSound('click');
+        if (selectedTables.length === 11) {
+            selectedTables = [];
+        } else {
+            selectedTables = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        }
+        renderTableSelector();
+        updateSetupInfo();
+    }
+
+    function setMode(mode) {
+        playSound('click');
+        currentMode = mode;
+        ['practice', 'exam', 'weak'].forEach(m =>
+            document.getElementById(`mode-${m}`).classList.toggle('selected', mode === m));
+
+        // Hibák gyakorlásánál nincs táblaválasztás: a korábbi hibákból dolgozik
+        document.getElementById('table-picker').style.display = mode === 'weak' ? 'none' : 'block';
+        document.getElementById('practice-settings').style.display = mode === 'exam' ? 'none' : 'block';
+        document.getElementById('exam-settings').style.display = mode === 'exam' ? 'block' : 'none';
+        document.getElementById('weak-settings').style.display = mode === 'weak' ? 'block' : 'none';
+    }
+
+    function setOp(op, btn) {
+        playSound('click');
+        currentOp = op;
+        selectInGroup(btn);
+        updateSetupInfo();
+    }
+
+    // Egy gombcsoportban csak a megnyomott gomb legyen kijelölve
+    function selectInGroup(btn) {
+        btn.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+    }
+
+    function setCount(count, btn) {
+        playSound('click');
+        questionCountSetting = count;
+        const btns = document.querySelectorAll('.btn-count');
+        btns.forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+    }
+
+    function updateSetupInfo() {
+        const count = buildDeck(selectedTables, currentOp).length;
+        document.getElementById('exam-task-info').innerText =
+            `ℹ️ A Kikérdező módban a kiválasztott ${selectedTables.length} db táblából pontosan ${count} feladat lesz kikérdezve.`;
+
+        const weakCount = weakQuestions().length;
+        document.getElementById('weak-count-card').innerText = weakCount;
+        document.getElementById('weak-task-info').innerText = weakCount
+            ? `🎯 ${weakCount} feladat vár gyakorlásra. Ha egy feladat kétszer egymás után elsőre jó, kikerül a listából.`
+            : '🎉 Nincs gyakorlásra váró hibás feladat. Szuper!';
+    }
+
+    /* --- TAB NAVIGÁCIÓ --- */
+    function switchTab(tabName) {
+        const quizRunning = document.getElementById('screen-quiz').classList.contains('active');
+        if (quizRunning && !confirm('Biztosan kilépsz? A mostani teszt eredménye elveszik.')) return;
+        quizRunId++; // a félbehagyott teszt függő időzítői már ne lépjenek tovább
+        playSound('click');
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        // A Fejlődés fül a képernyő magasságához igazodik (görgetés nélkül kifér)
+        document.querySelector('.app-container').classList.toggle('fit-screen', tabName === 'stats');
+
+        if (tabName === 'setup') {
+            document.querySelectorAll('.tab-btn')[0].classList.add('active');
+            document.getElementById('screen-setup').classList.add('active');
+            updateSetupInfo();
+        } else if (tabName === 'stats') {
+            document.querySelectorAll('.tab-btn')[1].classList.add('active');
+            document.getElementById('screen-stats').classList.add('active');
+            renderChart();
+            renderHeatmap();
+        }
+        scheduleUpdate(); // ha vár egy frissítés, most már mehet
+    }
+
+    /* --- FELADATOK ÉS FELADATONKÉNTI STATISZTIKA --- */
+    // Egy feladat: op ('mul' vagy 'div'), table (a tábla), other (a másik szám).
+    // Szorzás: other × table = ? (a tankönyv szerint: 4-es tábla = 1 × 4, 2 × 4, 3 × 4 ...)
+    // Osztás (bennfoglalás): (other·table) : table = other
+    const OP_SYMBOL = { mul: '×', div: ':' };
+    const RECENT = 5; // ennyi legutóbbi választ tartunk meg feladatonként
+    const SLOW_MS = 6000; // ennél lassabb átlagos válasz "lassú" a térképen
+
+    function makeQuestion(op, table, other) {
+        return op === 'div'
+            ? { op, table, other, f1: table * other, f2: table, target: other }
+            : { op, table, other, f1: other, f2: table, target: table * other };
+    }
+
+    const factKey = q => `${q.op}:${q.table}:${q.other}`;
+    const questionText = q => `${q.f1} ${OP_SYMBOL[q.op]} ${q.f2}`;
+
+    function buildDeck(tables, op) {
+        const deck = [];
+        tables.forEach(t => {
+            for (let i = 0; i <= 10; i++) {
+                if (op !== 'div') deck.push(makeQuestion('mul', t, i));
+                if (op !== 'mul' && t > 0) deck.push(makeQuestion('div', t, i)); // 0-val nem osztunk
+            }
+        });
+        return deck;
+    }
+
+    // Véletlenszerű keverés (Fisher-Yates)
+    function shuffle(arr) {
+        for (let i = arr.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [arr[i], arr[j]] = [arr[j], arr[i]];
+        }
+        return arr;
+    }
+
+    // szorzo_facts: { "mul:7:8": { n, ok, bone, bad, r, ms } }
+    // r: a legutóbbi válaszok (o = elsőre jó, b = csonttal javított, x = hibás); ms: az elsőre jó válaszok ideje
+    function loadFacts() {
+        try {
+            return JSON.parse(localStorage.getItem('szorzo_facts') || '{}');
+        } catch (e) {
+            return {};
+        }
+    }
+
+    function recordFact(q, outcome, ms) {
+        const facts = loadFacts();
+        const f = facts[factKey(q)] || { n: 0, ok: 0, bone: 0, bad: 0, r: '', ms: [] };
+        f.n++;
+        if (outcome === 'o') f.ok++;
+        else if (outcome === 'b') f.bone++;
+        else f.bad++;
+        f.r = (f.r + outcome).slice(-RECENT);
+        if (outcome === 'o' && ms != null) f.ms = [...f.ms, Math.round(ms)].slice(-RECENT);
+        facts[factKey(q)] = f;
+        localStorage.setItem('szorzo_facts', JSON.stringify(facts));
+    }
+
+    // Gyakorlásra vár, ha nemrég hibás vagy csonttal javított volt, és azóta nincs két egymás utáni jó válasza
+    const isWeak = f => /[bx]/.test(f.r) && !f.r.endsWith('oo');
+    // 0..1: a legutóbbi válaszok átlaga (elsőre jó = 1, csonttal = 0,5, hibás = 0)
+    const factScore = f => [...f.r].reduce((s, c) => s + (c === 'o' ? 1 : c === 'b' ? 0.5 : 0), 0) / f.r.length;
+    const avgMs = f => f.ms.length ? f.ms.reduce((a, b) => a + b, 0) / f.ms.length : null;
+
+    function weakQuestions() {
+        const facts = loadFacts();
+        return Object.keys(facts)
+            .filter(k => OP_SYMBOL[k.split(':')[0]] && isWeak(facts[k]))
+            .map(k => {
+                const [op, table, other] = k.split(':');
+                return { q: makeQuestion(op, +table, +other), score: factScore(facts[k]) };
+            });
+    }
+
+    /* --- TESZT GENERÁLÁS ÉS INDÍTÁS --- */
+    function startQuiz() {
+        playSound('click');
+
+        // Pakli összeállítása
+        let fullDeck;
+        if (currentMode === 'weak') {
+            // A leggyengébbek kerülnek előre, ha kevesebb feladatot kér a beállítás
+            fullDeck = shuffle(weakQuestions()).sort((a, b) => a.score - b.score).map(w => w.q);
+            if (fullDeck.length === 0) {
+                alert('Nincs gyakorlásra váró hibás feladat. Szuper! 🎉');
+                return;
+            }
+        } else {
+            if (selectedTables.length === 0) {
+                alert('Kérlek, válassz ki legalább egy táblát!');
+                return;
+            }
+            fullDeck = shuffle(buildDeck(selectedTables, currentOp));
+            if (fullDeck.length === 0) {
+                alert('0-val nem lehet osztani. Válassz másik táblát is!');
+                return;
+            }
+        }
+
+        // Feladatszám vágása üzemmód szerint (a kikérdezőben mindig az összes)
+        if (currentMode !== 'exam' && questionCountSetting !== 'all') {
+            fullDeck = fullDeck.slice(0, Math.min(parseInt(questionCountSetting), fullDeck.length));
+        }
+        quizDeck = shuffle(fullDeck);
+
+        // Állapot alaphelyzetbe
+        currentQuestionIndex = 0;
+        score = 0;
+        errorsCount = 0;
+        bonesLeft = 3;
+        bonesUsed = 0;
+        mistakesList = [];
+        bonesList = [];
+        currentAnswerInput = "";
+        isBoneRetryState = false;
+        quizRunId++;
+        startTime = new Date();
+
+        // Képernyő váltás
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById('screen-quiz').classList.add('active');
+
+        document.getElementById('bone-badge').style.display = currentMode !== 'exam' ? 'flex' : 'none';
+
+        updateQuizUI();
+        showNextQuestion();
+        scheduleUpdate(); // teszt közben nem frissítünk
+    }
+
+    function showNextQuestion() {
+        if (currentQuestionIndex >= quizDeck.length) {
+            finishQuiz();
+            return;
+        }
+
+        const q = quizDeck[currentQuestionIndex];
+        document.getElementById('q-factor1').innerText = q.f1;
+        document.getElementById('q-op').innerText = OP_SYMBOL[q.op];
+        document.getElementById('q-factor2').innerText = q.f2;
+        currentAnswerInput = "";
+        document.getElementById('user-answer').innerText = "";
+        document.getElementById('feedback').innerText = "";
+        document.getElementById('feedback').className = "feedback-msg";
+        isBoneRetryState = false;
+        boneFirstAnswer = null;
+        inputLocked = false;
+        questionShownAt = performance.now();
+        firstAnswerMs = null;
+
+        updateQuizUI();
+    }
+
+    // Kis szünet a visszajelzés után, majd jön a következő feladat (ha közben nem léptek ki)
+    function goToNextQuestionAfter(ms) {
+        inputLocked = true;
+        const runId = quizRunId;
+        setTimeout(() => {
+            if (runId !== quizRunId) return;
+            currentQuestionIndex++;
+            showNextQuestion();
+        }, ms);
+    }
+
+    function updateQuizUI() {
+        document.getElementById('quiz-score').innerText = score;
+        document.getElementById('quiz-errors').innerText = errorsCount;
+        document.getElementById('quiz-bones').innerText = bonesLeft;
+
+        const progressPct = (currentQuestionIndex / quizDeck.length) * 100;
+        document.getElementById('quiz-progress').style.width = `${progressPct}%`;
+    }
+
+    /* --- BEVITEL ÉS VÁLASZ ADÁS --- */
+    function appendNum(num) {
+        if (inputLocked || currentAnswerInput.length >= 3) return;
+        playSound('click');
+        // Vezető nulla helyett az új számjegy kerül be ("07" -> "7")
+        currentAnswerInput = currentAnswerInput === "0" ? num.toString() : currentAnswerInput + num;
+        document.getElementById('user-answer').innerText = currentAnswerInput;
+    }
+
+    // ⌫: az utolsó számjegy törlése
+    function deleteDigit() {
+        if (inputLocked || currentAnswerInput === "") return;
+        playSound('delete');
+        currentAnswerInput = currentAnswerInput.slice(0, -1);
+        document.getElementById('user-answer').innerText = currentAnswerInput;
+    }
+
+    function clearAnswer() {
+        currentAnswerInput = "";
+        document.getElementById('user-answer').innerText = "";
+    }
+
+    function handlePhysicalKeyboard(e) {
+        if (pinFlow) {
+            handlePinKeyboard(e);
+            return;
+        }
+        if (!document.getElementById('screen-quiz').classList.contains('active')) return;
+
+        if (/^[0-9]$/.test(e.key)) {
+            appendNum(parseInt(e.key));
+        } else if (e.key === 'Backspace') {
+            deleteDigit();
+        } else if (e.key === 'Escape' || e.key === 'Delete') {
+            if (!inputLocked) clearAnswer();
+        } else if (e.key === 'Enter') {
+            if (!e.repeat) submitAnswer();
+        } else {
+            return;
+        }
+        // Különben a fókuszban maradt gomb (pl. az előbb kattintott OK) is "megnyomódna"
+        e.preventDefault();
+    }
+
+    function submitAnswer() {
+        if (inputLocked || currentAnswerInput === "") return;
+
+        const q = quizDeck[currentQuestionIndex];
+        const val = parseInt(currentAnswerInput);
+        const fb = document.getElementById('feedback');
+        if (firstAnswerMs === null) firstAnswerMs = performance.now() - questionShownAt;
+
+        if (val === q.target) {
+            // HELYES VÁLASZ
+            playSound('correct');
+            fb.innerText = "Helyes! 🎉";
+            fb.className = "feedback-msg feedback-correct";
+            score++;
+            if (isBoneRetryState) {
+                bonesList.push(`${questionText(q)} = ${q.target} (először: ${boneFirstAnswer})`);
+                recordFact(q, 'b');
+            } else {
+                recordFact(q, 'o', firstAnswerMs);
+            }
+            goToNextQuestionAfter(700);
+
+        } else {
+            // HIBÁS VÁLASZ
+            if (currentMode !== 'exam' && bonesLeft > 0 && !isBoneRetryState) {
+                // Csontos javítási lehetőség
+                playSound('bone');
+                bonesLeft--;
+                bonesUsed++;
+                isBoneRetryState = true;
+                boneFirstAnswer = val;
+
+                fb.innerText = "Nem jó! 🦴 Használtál egy csontot, próbáld újra!";
+                fb.className = "feedback-msg feedback-bone";
+                clearAnswer();
+                updateQuizUI();
+            } else {
+                // Végleges hiba
+                playSound('wrong');
+                errorsCount++;
+                const answers = boneFirstAnswer !== null ? `${boneFirstAnswer}, majd ${val}` : `${val}`;
+                mistakesList.push(`${questionText(q)} = ${q.target} (A válaszod: ${answers})`);
+                recordFact(q, 'x');
+
+                fb.innerText = `Sajnos nem! A helyes válasz: ${q.target}`;
+                fb.className = "feedback-msg feedback-wrong";
+                goToNextQuestionAfter(1600);
+            }
+        }
+    }
+
+    /* --- TESZT BEFEJEZÉSE ÉS EREDMÉNYEK --- */
+    function finishQuiz() {
+        const endTime = new Date();
+        const durationSec = Math.round((endTime - startTime) / 1000);
+        const mins = Math.floor(durationSec / 60);
+        const secs = durationSec % 60;
+        const timeStr = `${mins.toString().padStart(2,'0')}:${secs.toString().padStart(2,'0')}`;
+
+        const totalTasks = quizDeck.length;
+        const pct = Math.round((score / totalTasks) * 100);
+
+        // Osztályzat / Címke
+        let gradeStr = "Próbáld újra!";
+        if (pct === 100) gradeStr = "Zseniális! 🏆";
+        else if (pct >= 85) gradeStr = "Nagyszerű! 🌟";
+        else if (pct >= 70) gradeStr = "Jó munka! 👍";
+        else if (pct >= 50) gradeStr = "Gyakorolj még! 💪";
+
+        // Eredmény kijelzés frissítése
+        document.getElementById('res-title').innerText = pct >= 50 ? '🎉 Szép munka!' : '💪 Ne add fel!';
+        document.getElementById('res-pct').innerText = `${pct}%`;
+        document.getElementById('res-grade').innerText = gradeStr;
+        const modeNames = { practice: 'Gyakorló Mód', exam: 'Szülői Kikérdező', weak: 'Hibák Gyakorlása' };
+        document.getElementById('res-mode-badge').innerText = modeNames[currentMode];
+        document.getElementById('res-total').innerText = `${score}/${totalTasks}`;
+        document.getElementById('res-errors').innerText = errorsCount;
+        document.getElementById('res-bones-used').innerText = bonesUsed;
+        document.getElementById('res-time').innerText = timeStr;
+
+        // Hibák listája
+        const mListEl = document.getElementById('res-mistakes-list');
+        if (mistakesList.length === 0) {
+            mListEl.innerHTML = `<em>Hibátlan teljesítmény, nincs kijavítandó feladat! 🎉</em>`;
+        } else {
+            mListEl.innerHTML = mistakesList.map(m => `<div>❌ ${m}</div>`).join('');
+        }
+
+        // Csonttal javított feladatok: jók lettek, de elsőre nem mentek
+        document.getElementById('res-bones-section').style.display = bonesList.length ? 'block' : 'none';
+        document.getElementById('res-bones-list').innerHTML = bonesList.map(m => `<div>🦴 ${m}</div>`).join('');
+
+        // Konfetti elindítása magas pontszám esetén
+        if (pct >= 80 && typeof confetti === 'function') {
+            confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+        }
+
+        // Mentés LocalStorage-ba
+        saveResultToStorage({
+            date: new Date().toLocaleDateString('hu-HU', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            pct: pct,
+            mode: currentMode
+        });
+
+        // Képernyőváltás
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById('screen-results').classList.add('active');
+    }
+
+    /* --- STATISZTIKA & ADATMENTÉS --- */
+    function saveResultToStorage(resultObj) {
+        let history = JSON.parse(localStorage.getItem('szorzo_history') || '[]');
+        history.push(resultObj);
+        if (history.length > 20) history.shift(); // Max utolsó 20 teszt
+        localStorage.setItem('szorzo_history', JSON.stringify(history));
+    }
+
+    // Törölni csak a szülő tud, PIN-nel
+    function clearHistory() {
+        playSound('click');
+        requireParentPin(() => {
+            if (confirm("Biztosan törölni szeretnéd az eddigi statisztikát (grafikon és feladat-térkép)?")) {
+                localStorage.removeItem('szorzo_history');
+                localStorage.removeItem('szorzo_facts');
+                renderChart();
+                renderHeatmap();
+            }
+        });
+    }
+
+    /* --- SZÜLŐI PIN --- */
+    // Első használatkor a szülő beállít egy 4 jegyű PIN-t (kétszer beírva), utána ezt kéri.
+    const PIN_LENGTH = 4;
+    let pinFlow = null; // { step: 'enter' | 'new' | 'repeat', input, first, onSuccess }
+
+    function requireParentPin(onSuccess) {
+        const hasPin = localStorage.getItem('szorzo_pin') !== null;
+        pinFlow = { step: hasPin ? 'enter' : 'new', input: '', first: null, onSuccess };
+        showPinStep();
+        document.getElementById('pin-overlay').hidden = false;
+    }
+
+    function showPinStep(error) {
+        const texts = {
+            enter: 'Add meg a szülői PIN-t a törléshez.',
+            new: 'Még nincs szülői PIN. Állíts be egy 4 jegyű PIN-t!',
+            repeat: 'Írd be még egyszer ugyanazt a PIN-t.',
+        };
+        const msg = document.getElementById('pin-msg');
+        msg.innerText = error || texts[pinFlow.step];
+        msg.classList.toggle('error', !!error);
+        renderPinDots();
+    }
+
+    function renderPinDots() {
+        document.querySelectorAll('#pin-dots i').forEach((dot, i) =>
+            dot.classList.toggle('filled', i < pinFlow.input.length));
+    }
+
+    function pinPress(num) {
+        if (!pinFlow || pinFlow.input.length >= PIN_LENGTH) return;
+        playSound('click');
+        pinFlow.input += num;
+        renderPinDots();
+        if (pinFlow.input.length === PIN_LENGTH) setTimeout(checkPin, 150); // látszódjon a 4. pötty is
+    }
+
+    function pinDelete() {
+        if (!pinFlow || pinFlow.input === '') return;
+        playSound('delete');
+        pinFlow.input = pinFlow.input.slice(0, -1);
+        renderPinDots();
+    }
+
+    function checkPin() {
+        if (!pinFlow) return;
+        const entered = pinFlow.input;
+        pinFlow.input = '';
+
+        if (pinFlow.step === 'enter') {
+            if (entered === localStorage.getItem('szorzo_pin')) return finishPin();
+            playSound('wrong');
+            showPinStep('Hibás PIN, próbáld újra!');
+        } else if (pinFlow.step === 'new') {
+            pinFlow.first = entered;
+            pinFlow.step = 'repeat';
+            showPinStep();
+        } else if (entered === pinFlow.first) {
+            localStorage.setItem('szorzo_pin', entered);
+            finishPin();
+        } else {
+            playSound('wrong');
+            pinFlow.step = 'new';
+            showPinStep('A két PIN nem egyezett. Kezdd újra: adj meg egy 4 jegyű PIN-t!');
+        }
+    }
+
+    function finishPin() {
+        const onSuccess = pinFlow.onSuccess;
+        closePin();
+        onSuccess();
+    }
+
+    function closePin() {
+        pinFlow = null;
+        document.getElementById('pin-overlay').hidden = true;
+        scheduleUpdate();
+    }
+
+    function handlePinKeyboard(e) {
+        if (/^[0-9]$/.test(e.key)) pinPress(parseInt(e.key));
+        else if (e.key === 'Backspace') pinDelete();
+        else if (e.key === 'Escape') closePin();
+        else return;
+        e.preventDefault();
+    }
+
+    /* --- FELADAT-TÉRKÉP (hőtérkép a szülőknek) --- */
+    function setHeatmapOp(op, btn) {
+        playSound('click');
+        heatmapOp = op;
+        selectInGroup(btn);
+        renderHeatmap();
+    }
+
+    function heatLevel(f) {
+        const s = factScore(f);
+        return s >= 0.9 ? 4 : s >= 0.7 ? 3 : s >= 0.5 ? 2 : s >= 0.3 ? 1 : 0;
+    }
+
+    function renderHeatmap() {
+        const facts = loadFacts();
+        const isDiv = heatmapOp === 'div';
+        const grid = document.getElementById('heatmap');
+        grid.innerHTML = '';
+        grid.style.setProperty('--hm-rows', isDiv ? 11 : 12); // a rács méretezéséhez (fejléc + táblák)
+        document.getElementById('hm-detail').innerText = isDiv
+            ? 'Sor: osztó, oszlop: hányados (a 7-es sor 8-as oszlopa: 56 : 7). Koppints egy mezőre a részletekért!'
+            : 'Sor: melyik tábla, oszlop: hányszor (a 7-es sor 8-as oszlopa: 8 × 7). Koppints egy mezőre a részletekért!';
+
+        const addHead = text => {
+            const el = document.createElement('div');
+            el.className = 'hm-cell hm-head';
+            el.innerText = text;
+            grid.appendChild(el);
+        };
+
+        addHead(OP_SYMBOL[heatmapOp]);
+        for (let c = 0; c <= 10; c++) addHead(c);
+        for (let t = isDiv ? 1 : 0; t <= 10; t++) {
+            addHead(t);
+            for (let c = 0; c <= 10; c++) {
+                const q = makeQuestion(heatmapOp, t, c);
+                const f = facts[factKey(q)];
+                const cell = document.createElement('button');
+                cell.className = `hm-cell ${f ? 'hm-l' + heatLevel(f) : 'hm-none'}`;
+                if (f && avgMs(f) > SLOW_MS) cell.classList.add('slow');
+                cell.innerText = isDiv ? q.f1 : q.target; // osztásnál az osztandó, szorzásnál a szorzat
+                cell.title = `${questionText(q)} = ${q.target}`;
+                cell.onclick = () => showFactDetail(q, f, cell);
+                grid.appendChild(cell);
+            }
+        }
+
+        const weakCount = weakQuestions().length;
+        document.getElementById('weak-summary').innerHTML = weakCount
+            ? `🎯 ${weakCount} feladat vár gyakorlásra <button class="btn-weak-go" onclick="practiceWeakNow()">Gyakorold ➔</button>`
+            : '🎉 Nincs gyakorlásra váró hibás feladat.';
+    }
+
+    function showFactDetail(q, f, cell) {
+        document.querySelectorAll('.hm-cell.selected').forEach(c => c.classList.remove('selected'));
+        cell.classList.add('selected');
+        const el = document.getElementById('hm-detail');
+        const title = `<strong>${questionText(q)} = ${q.target}</strong>`;
+        if (!f) {
+            el.innerHTML = `${title}<br>Még nem szerepelt.`;
+            return;
+        }
+        const icons = { o: '✅', b: '🦴', x: '❌' };
+        const ms = avgMs(f);
+        el.innerHTML = `${title}${isWeak(f) ? ' · 🎯 gyakorlásra vár' : ''}<br>` +
+            `${f.n} válasz: ✅ ${f.ok} · 🦴 ${f.bone} · ❌ ${f.bad}` +
+            (ms !== null ? ` · átlag ${(ms / 1000).toFixed(1).replace('.', ',')} mp` : '') +
+            `<br>Legutóbbiak: ${[...f.r].map(c => icons[c]).join(' ')}`;
+    }
+
+    function practiceWeakNow() {
+        switchTab('setup');
+        setMode('weak');
+    }
+
+    function renderChart() {
+        if (typeof Chart === 'undefined') return;
+        const history = JSON.parse(localStorage.getItem('szorzo_history') || '[]');
+        const ctx = document.getElementById('progressChart').getContext('2d');
+
+        if (chartInstance) {
+            chartInstance.destroy();
+        }
+
+        // Rövid felirat a tengelyen (kevés hely van), a dátum a buborékban látszik
+        const labels = history.map((h, idx) => `${idx + 1}.`);
+        const dataPct = history.map(h => h.pct);
+        // A színek a témából jönnek (világos / sötét mód)
+        const css = getComputedStyle(document.documentElement);
+        const themeColor = name => css.getPropertyValue(name).trim();
+        const axis = { ticks: { color: themeColor('--text-muted') }, grid: { color: themeColor('--border') } };
+
+        chartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Eredmény (%)',
+                    data: dataPct,
+                    borderColor: themeColor('--primary-text'),
+                    backgroundColor: 'rgba(79, 70, 229, 0.15)',
+                    borderWidth: 3,
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 5,
+                    pointBackgroundColor: '#06b6d4'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: axis,
+                    y: {
+                        min: 0,
+                        max: 100,
+                        grid: axis.grid,
+                        ticks: { ...axis.ticks, callback: value => value + '%', maxTicksLimit: 6 }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: { title: items => `${items[0].label} teszt – ${history[items[0].dataIndex].date}` }
+                    }
+                }
+            }
+        });
+    }
+
+    /* --- OFFLINE MŰKÖDÉS / TELEPÍTHETŐ APP --- */
+    // HTTPS-en a service worker elmenti az appot, így hálózat nélkül is elindul.
+    // A HTTP címről (8080) átvisz a HTTPS címre (8443), ha az eszköz megbízik a tanúsítványban,
+    // és magával viszi az eddigi előzményeket (a két cím külön tárolót kap a böngészőben).
+    const HTTP_PORT = '8080';
+    const HTTPS_PORT = '8443';
+    const MIGRATE_KEYS = ['szorzo_history', 'szorzo_sound', 'szorzo_facts', 'szorzo_pin', 'szorzo_theme'];
+
+    /* --- FRISSÍTÉS --- */
+    // Ha a háttérben új verzió töltődött le, egy sáv jelzi, és pár másodperc múlva magától frissül.
+    // Teszt közben és az eredmény nézésekor nem frissít, csak utána (beállítások / statisztika képernyőn).
+    const UPDATE_DELAY_S = 5;
+    let waitingWorker = null;
+    let updateTimer = null;
+
+    function registerServiceWorker() {
+        if (!('serviceWorker' in navigator) || !window.isSecureContext) return;
+        navigator.serviceWorker.register('sw.js').then(reg => {
+            const watch = sw => sw.addEventListener('statechange', () => {
+                // "installed" + van már működő példány = ez egy új verzió, ami a jelzésünkre vár
+                if (sw.state === 'installed' && navigator.serviceWorker.controller) onUpdateReady(sw);
+            });
+            if (reg.waiting && navigator.serviceWorker.controller) onUpdateReady(reg.waiting);
+            if (reg.installing) watch(reg.installing);
+            reg.addEventListener('updatefound', () => watch(reg.installing));
+
+            // A telepített app napokig nyitva maradhat: időnként és előtérbe kerüléskor is megnézzük
+            setInterval(() => reg.update().catch(() => {}), 30 * 60 * 1000);
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') reg.update().catch(() => {});
+            });
+        }).catch(() => { /* nélküle is működik, csak nem offline */ });
+
+        let reloading = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+            if (reloading || !waitingWorker) return; // az első telepítéskor nincs mit újratölteni
+            reloading = true;
+            try {
+                sessionStorage.setItem('szorzo_updated', JSON.stringify({
+                    tables: selectedTables, op: currentOp, mode: currentMode, count: questionCountSetting,
+                }));
+            } catch (e) { /* a beállítások nélkül is frissül */ }
+            location.reload();
+        });
+    }
+
+    function onUpdateReady(worker) {
+        waitingWorker = worker;
+        document.getElementById('update-banner').hidden = false;
+        scheduleUpdate();
+    }
+
+    function scheduleUpdate() {
+        if (!waitingWorker) return;
+        clearInterval(updateTimer);
+        const text = document.getElementById('update-text');
+        const busy = pinFlow || ['screen-quiz', 'screen-results']
+            .some(id => document.getElementById(id).classList.contains('active'));
+        if (busy) {
+            text.innerText = '✨ Új verzió érhető el – a teszt után frissül.';
+            return;
+        }
+        let left = UPDATE_DELAY_S;
+        const show = () => { text.innerText = `✨ Új verzió érhető el – frissítés ${left} mp múlva…`; };
+        show();
+        updateTimer = setInterval(() => {
+            if (--left <= 0) applyUpdate();
+            else show();
+        }, 1000);
+    }
+
+    function applyUpdate() {
+        clearInterval(updateTimer);
+        if (waitingWorker) waitingWorker.postMessage('SKIP_WAITING');
+    }
+
+    // Frissítés után: üzenet, és a korábbi beállítások (táblák, művelet, mód, darabszám) visszaállítása
+    function restoreAfterUpdate() {
+        let saved = null;
+        try {
+            saved = JSON.parse(sessionStorage.getItem('szorzo_updated'));
+            sessionStorage.removeItem('szorzo_updated');
+        } catch (e) { /* nincs mit visszaállítani */ }
+        if (!saved) return;
+
+        selectedTables = Array.isArray(saved.tables) ? saved.tables : [];
+        renderTableSelector();
+        const opIndex = ['mul', 'div', 'mix'].indexOf(saved.op);
+        if (opIndex >= 0) setOp(saved.op, document.querySelectorAll('#table-picker .btn-op')[opIndex]);
+        const countIndex = [10, 20, 30, 'all'].indexOf(saved.count);
+        if (countIndex >= 0) setCount(saved.count, document.querySelectorAll('.btn-count')[countIndex]);
+        if (['practice', 'exam', 'weak'].includes(saved.mode)) setMode(saved.mode);
+        showToast('✅ Az app frissült az új verzióra!');
+    }
+
+    function showToast(message) {
+        const toast = document.getElementById('toast');
+        toast.innerText = message;
+        toast.hidden = false;
+        setTimeout(() => { toast.hidden = true; }, 3500);
+    }
+
+    /* --- SÖTÉT MÓD --- */
+    // Alapból a készülék beállítását követi; a 🌙/☀️ gombbal választott mód felülírja (eszközönként megjegyzi)
+    function applyTheme(theme) {
+        document.documentElement.dataset.theme = theme;
+        document.getElementById('theme-btn').innerText = theme === 'dark' ? '☀️' : '🌙';
+        document.querySelector('meta[name="theme-color"]').content = theme === 'dark' ? '#111a2e' : '#4f46e5';
+        if (document.getElementById('screen-stats').classList.contains('active')) renderChart();
+    }
+
+    function toggleTheme() {
+        playSound('click');
+        const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+        try { localStorage.setItem('szorzo_theme', theme); } catch (e) { /* csak most vált */ }
+        applyTheme(theme);
+    }
+
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+        let saved = null;
+        try { saved = localStorage.getItem('szorzo_theme'); } catch (err) { /* nincs mentett választás */ }
+        if (!saved) applyTheme(e.matches ? 'dark' : 'light');
+    });
+
+    function tryUpgradeToHttps() {
+        if (location.protocol !== 'http:' || location.port !== HTTP_PORT) return;
+        const target = `https://${location.hostname}:${HTTPS_PORT}/`;
+        const ctrl = new AbortController();
+        setTimeout(() => ctrl.abort(), 3000);
+        // Csak akkor sikerül, ha a tanúsítvány megbízható ezen az eszközön
+        fetch(target + 'manifest.webmanifest', { mode: 'no-cors', cache: 'no-store', signal: ctrl.signal })
+            .then(() => {
+                if (startTime) return; // már elkezdett tesztet nem szakítunk félbe
+                const data = {};
+                MIGRATE_KEYS.forEach(k => {
+                    const v = localStorage.getItem(k);
+                    if (v !== null) data[k] = v;
+                });
+                const hash = Object.keys(data).length ? '#import=' + encodeURIComponent(JSON.stringify(data)) : '';
+                location.replace(target + hash);
+            })
+            .catch(() => { /* nincs megbízható HTTPS: maradunk HTTP-n */ });
+    }
+
+    function importMigratedData() {
+        if (!location.hash.startsWith('#import=')) return;
+        try {
+            const data = JSON.parse(decodeURIComponent(location.hash.slice('#import='.length)));
+            // Csak üres helyre importálunk, a HTTPS oldalon már meglévő adatot nem írjuk felül
+            MIGRATE_KEYS.forEach(k => {
+                if (typeof data[k] === 'string' && localStorage.getItem(k) === null) localStorage.setItem(k, data[k]);
+            });
+        } catch (e) { /* hibás hash: nincs mit importálni */ }
+        window.history.replaceState(null, '', location.pathname);
+    }
+</script>
+
+</body>
+</html>

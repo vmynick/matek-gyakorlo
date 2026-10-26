@@ -1,0 +1,57 @@
+# Szorzótábla Mester – közzététel GitHub Pages-re minden push után.
+# Előbb lefutnak a böngészős tesztek; ha bármelyik elbukik, nem kerül ki az új verzió.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      # A futtatón lévő Google Chrome-mal fut (nem kell külön böngészőt letölteni)
+      - name: Test
+        run: node tests/szorzotabla.test.mjs
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build
+        run: |
+          mkdir _site
+          cp -r szorzotabla.html sw.js manifest.webmanifest icon.svg icon-192.png icon-512.png vendor _site/
+          cp szorzotabla.html _site/index.html
+          # új verzió a service workerbe: a telepített appok így frissítik a mentett példányt
+          sed -i "s/const VERSION = 'dev';/const VERSION = '${GITHUB_SHA::12}';/" _site/sw.js
+          grep -q "const VERSION = '${GITHUB_SHA::12}';" _site/sw.js
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v5
