@@ -41,7 +41,7 @@ jobs:
       - name: Build
         run: |
           mkdir _site
-          cp -r szorzotabla.html szulo.html szulo.js stats.js common.css config.js cloud.js sw.js manifest.webmanifest icon.svg icon-192.png icon-512.png vendor _site/
+          cp -r szorzotabla.html szulo.html szulo.js stats.js hints.js common.css config.js cloud.js sw.js manifest.webmanifest icon.svg icon-192.png icon-512.png vendor _site/
           # az app alján látszó verzió mellé a commit rövid azonosítója
           sed -i "s/const APP_BUILD = 'dev';/const APP_BUILD = '${GITHUB_SHA::7}';/" _site/szorzotabla.html
           grep -q "const APP_BUILD = '${GITHUB_SHA::7}';" _site/szorzotabla.html

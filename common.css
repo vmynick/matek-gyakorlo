@@ -90,9 +90,9 @@
 
 .heatmap {
     display: grid;
-    grid-template-columns: repeat(12, 1fr);
+    grid-template-columns: repeat(var(--hm-cols, 12), 1fr);
     gap: 2px;
-    width: min(100cqw, calc((100cqh - 4px) * 12 / var(--hm-rows, 12)), 560px);
+    width: min(100cqw, calc((100cqh - 4px) * var(--hm-cols, 12) / var(--hm-rows, 12)), 560px);
     container-type: inline-size;
 }
 

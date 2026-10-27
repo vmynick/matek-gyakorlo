@@ -27,6 +27,8 @@
     <script src="vendor/confetti.browser.min.js"></script>
     <!-- Közös statisztika (feladat-térkép, grafikon) – a szülői felület is ezt használja -->
     <script src="stats.js"></script>
+    <!-- Segítség rossz válasz után: tipp és levezetés -->
+    <script src="hints.js"></script>
     <!-- Felhő (Supabase 2.118.0, helyi másolat): eszköz összekötése és az eredmények szinkronja -->
     <script src="vendor/supabase.js"></script>
     <script src="config.js"></script>
@@ -183,11 +185,20 @@
             grid-column: 1 / -1;
         }
 
-        /* Művelet választó (szorzás / osztás / vegyes) */
+        /* Művelet választó (szorzás / osztás / vegyes / hiányzó tényező / maradékos osztás) */
         .op-selector {
             display: flex;
+            flex-wrap: wrap;
             gap: 8px;
             margin-bottom: 20px;
+        }
+
+        #table-picker .btn-op {
+            flex: 1 1 28%;
+        }
+
+        #table-picker .btn-op.op-wide {
+            flex-basis: 40%;
         }
 
         .mode-card h3 {
@@ -380,6 +391,134 @@
         .feedback-correct { color: var(--success); }
         .feedback-wrong { color: var(--danger); }
         .feedback-bone { color: var(--warning); }
+
+        /* Hiányzó tényezőnél a válasz mezője elöl áll */
+        .expression > .answer-display:first-child {
+            margin: 0 10px 0 0;
+        }
+
+        /* Maradékos osztás: két mező, az éppen kitöltendő kiemelve */
+        .answer-display:not(.active) {
+            border-bottom-color: var(--border-strong);
+        }
+
+        .rem-line {
+            font-size: 1.6rem;
+            font-weight: 800;
+            color: var(--text-muted);
+            margin-top: 6px;
+        }
+
+        .rem-line .answer-display {
+            min-width: 70px;
+            height: 48px;
+            line-height: 48px;
+            font-size: 2.2rem;
+        }
+
+        /* Tipp csontnál (egy lépés, nem a megoldás) */
+        .hint {
+            margin-top: 6px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+
+        .hint[hidden], .numpad[hidden], .explain[hidden] {
+            display: none;
+        }
+
+        /* Levezetés végleges hiba után: a számbillentyűzet helyén, pöttyös ábrával */
+        .explain {
+            max-width: 380px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            text-align: center;
+        }
+
+        .explain-text {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--text-dark);
+        }
+
+        .dots {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 3px;
+        }
+
+        .dot-row {
+            display: flex;
+            gap: 3px;
+        }
+
+        .dot-row.split {
+            margin-top: 5px;
+        }
+
+        .dot-row i {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--primary);
+        }
+
+        .dot-row i.b { background: var(--secondary); }
+        .dot-row i.rest { background: var(--warning); }
+        .dot-row i.ghost {
+            background: transparent;
+            box-shadow: inset 0 0 0 2px var(--border-strong);
+        }
+
+        /* Mai gyakorlás kártya */
+        .daily-card {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 14px;
+            margin-bottom: 18px;
+            border: 2px solid var(--primary);
+            border-radius: 14px;
+            background: var(--selected-bg);
+        }
+
+        .daily-card .text {
+            flex: 1;
+            font-size: 0.9rem;
+            color: var(--text-dark);
+        }
+
+        .daily-card .text strong {
+            display: block;
+            font-size: 1.1rem;
+            color: var(--primary-text);
+        }
+
+        .daily-card button {
+            flex: none;
+            padding: 12px 16px;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            font-weight: 800;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+
+        .daily-card.done {
+            border-color: var(--success);
+        }
+
+        .daily-card.done button {
+            background: var(--raised);
+            color: var(--primary-text);
+            border: 1px solid var(--border-strong);
+        }
 
         /* Virtuális számbillentyűzet tabletre */
         .numpad {
@@ -588,6 +727,7 @@
 
         .hm-toolbar {
             display: flex;
+            flex-wrap: wrap;
             justify-content: space-between;
             align-items: center;
             gap: 8px;
@@ -1007,6 +1147,14 @@
             .hm-toolbar { font-size: 0.85rem; }
             .hm-toolbar .btn-op { padding: 5px 8px; font-size: 0.75rem; }
             .hm-legend { gap: 4px 8px; }
+            /* Feladat: a tipp és a maradék mezője mellett is férjen ki a számbillentyűzet */
+            .quiz-header { padding: 8px 14px; margin-bottom: 10px; }
+            .progress-bar-bg { margin-bottom: 12px; }
+            .question-card { padding: 12px; margin-bottom: 12px; }
+            .expression { font-size: 2.6rem; letter-spacing: 1px; }
+            .answer-display { min-width: 70px; height: 54px; line-height: 54px; font-size: 2.6rem; padding: 0 8px; }
+            .numpad { gap: 10px; }
+            .btn-num { padding: 12px; }
         }
 
         /* Fekvő tableten / laptopon a grafikon és a térkép egymás mellett */
@@ -1054,6 +1202,15 @@
         <!-- Kiosztott feladatok (összekötött eszközön, a szülőtől / tanártól) -->
         <div class="assignments" id="assignments" hidden></div>
 
+        <!-- Mai gyakorlás: egy gombnyomásra 10 feladat, a gyerek eddigi eredményeiből válogatva -->
+        <div class="daily-card" id="daily-card">
+            <div class="text">
+                <strong id="daily-title">☀️ Mai gyakorlás</strong>
+                <span id="daily-info"></span>
+            </div>
+            <button id="daily-btn" onclick="startDaily()">Indítás ▶</button>
+        </div>
+
         <!-- Üzemmód választás -->
         <div class="mode-selector">
             <div class="mode-card selected" id="mode-practice" onclick="setMode('practice')">
@@ -1074,14 +1231,16 @@
             <!-- Művelet választás -->
             <div class="section-label">Művelet:</div>
             <div class="op-selector">
-                <button class="btn-op selected" onclick="setOp('mul', this)"><b>×</b> Szorzás</button>
-                <button class="btn-op" onclick="setOp('div', this)">➗ Osztás</button>
-                <button class="btn-op" onclick="setOp('mix', this)">🔀 Vegyes</button>
+                <button class="btn-op selected" data-op="mul" onclick="setOp('mul', this)"><b>×</b> Szorzás</button>
+                <button class="btn-op" data-op="div" onclick="setOp('div', this)">➗ Osztás</button>
+                <button class="btn-op" data-op="mix" onclick="setOp('mix', this)">🔀 Vegyes</button>
+                <button class="btn-op op-wide" data-op="mis" onclick="setOp('mis', this)">🔍 Hiányzó tényező</button>
+                <button class="btn-op op-wide" data-op="rem" onclick="setOp('rem', this)">🍬 Maradékos osztás</button>
             </div>
 
             <!-- Tábla Kiválasztó (0-10) -->
             <div class="section-label">
-                <span>Válaszd ki a táblákat:</span>
+                <span id="tables-label">Válaszd ki a táblákat:</span>
                 <button onclick="toggleAllTables()" style="border:none; background:none; color: var(--primary-text); font-weight:700; cursor:pointer; font-size:0.85rem;">Mind / Egyik sem</button>
             </div>
             <div class="grid-tables" id="tables-grid">
@@ -1134,15 +1293,24 @@
         </div>
 
         <div class="question-card">
-            <div class="expression">
+            <!-- A feladat (a műveletnek megfelelően a renderExpression rakja össze) -->
+            <div class="expression" id="expression">
                 <span id="q-factor1">4</span> <span id="q-op">×</span> <span id="q-factor2">7</span> =
-                <span class="answer-display" id="user-answer"></span>
+                <span class="answer-display active" id="user-answer"></span>
             </div>
             <div class="feedback-msg" id="feedback">&nbsp;</div>
+            <div class="hint" id="hint" hidden></div>
+        </div>
+
+        <!-- Végleges hiba után: levezetés pöttyökkel, a számbillentyűzet helyén -->
+        <div class="explain" id="explain" hidden>
+            <div class="explain-text" id="explain-text"></div>
+            <div class="dots" id="explain-dots" aria-hidden="true"></div>
+            <button class="btn-start" id="explain-next" onclick="nextAfterExplain()">Értem, tovább ➔</button>
         </div>
 
         <!-- Virtuális Érintőbillentyűzet -->
-        <div class="numpad">
+        <div class="numpad" id="numpad">
             <button class="btn-num" onclick="appendNum(1)">1</button>
             <button class="btn-num" onclick="appendNum(2)">2</button>
             <button class="btn-num" onclick="appendNum(3)">3</button>
@@ -1226,10 +1394,8 @@
             <div class="heatmap-card">
                 <div class="hm-toolbar">
                     <strong>🗺️ Feladat-térkép</strong>
-                    <div class="op-selector">
-                        <button class="btn-op selected" onclick="setHeatmapOp('mul', this)"><b>×</b> Szorzás</button>
-                        <button class="btn-op" onclick="setHeatmapOp('div', this)">➗ Osztás</button>
-                    </div>
+                    <!-- Szorzás, osztás, és ha gyakorolta, a hiányzó tényező és a maradékos osztás -->
+                    <div class="op-selector" id="hm-ops"></div>
                 </div>
                 <div class="heatmap-wrap">
                     <div class="heatmap" id="heatmap"></div>
@@ -1328,12 +1494,13 @@
     /* --- ALAPAPPLIKÁCIÓ ÁLLAPOT --- */
     let selectedTables = []; // Egyik sincs kijelölve az elején
     let currentMode = 'practice'; // 'practice', 'exam' vagy 'weak' (hibák gyakorlása)
-    let currentOp = 'mul'; // 'mul' (szorzás), 'div' (osztás) vagy 'mix' (vegyes)
+    let currentOp = 'mul'; // 'mul' (szorzás), 'div' (osztás), 'mix' (vegyes), 'mis' (hiányzó tényező), 'rem' (maradékos)
     let heatmapOp = 'mul'; // a feladat-térképen mutatott művelet
     let questionCountSetting = 20; // 10, 20, 30, vagy 'all'
     let soundEnabled = true; // Hangok állapota
     
     // Aktuális futó teszt állapota
+    let quizMode = 'practice'; // a futó teszt módja: a kiválasztott mód, vagy 'daily' (mai gyakorlás)
     let quizDeck = [];
     let currentQuestionIndex = 0;
     let score = 0;
@@ -1343,6 +1510,9 @@
     let mistakesList = [];
     let bonesList = []; // csonttal javított feladatok a szülői kimutatáshoz
     let currentAnswerInput = "";
+    let currentRemInput = ""; // maradékos osztásnál a maradék
+    let activeBox = 'main'; // melyik mezőbe ír a billentyűzet: 'main' vagy 'rem' (maradék)
+    let explainShownAt = null; // végleges hiba után a levezetés látszik; a "Tovább" gombra megy tovább
     let isBoneRetryState = false;
     let boneFirstAnswer = null; // a csont előtti (rossz) válasz
     let questionShownAt = 0; // válaszidő méréséhez
@@ -1463,9 +1633,6 @@
     };
 
     /* --- BEÁLLÍTÁSOK KEZELÉSE --- */
-    // Magyar rag a szám kiejtése szerint: 0-s, 3-as, 5-ös, 6-os...
-    const TABLE_SUFFIX = ['s', 'es', 'es', 'as', 'es', 'ös', 'os', 'es', 'as', 'es', 'es'];
-
     function renderTableSelector() {
         const grid = document.getElementById('tables-grid');
         grid.innerHTML = '';
@@ -1518,7 +1685,14 @@
         playSound('click');
         currentOp = op;
         selectInGroup(btn);
+        document.getElementById('tables-label').innerText = op === 'rem' ? 'Válaszd ki az osztókat:' : 'Válaszd ki a táblákat:';
         updateSetupInfo();
+    }
+
+    // A művelet kiválasztása a neve alapján (kiosztott feladatnál, frissítés után)
+    function selectOp(op) {
+        const btn = document.querySelector(`#table-picker .btn-op[data-op="${op}"]`);
+        if (btn) setOp(op, btn);
     }
 
     // Egy gombcsoportban csak a megnyomott gomb legyen kijelölve
@@ -1545,6 +1719,7 @@
         document.getElementById('weak-task-info').innerText = weakCount
             ? `🎯 ${weakCount} feladat vár gyakorlásra. Ha egy feladat kétszer egymás után elsőre jó, kikerül a listából.`
             : '🎉 Nincs gyakorlásra váró hibás feladat. Szuper!';
+        renderDaily();
     }
 
     /* --- TAB NAVIGÁCIÓ --- */
@@ -1578,9 +1753,16 @@
     function buildDeck(tables, op) {
         const deck = [];
         tables.forEach(t => {
+            if (t === 0 && op !== 'mul' && op !== 'mix') return; // 0-val nem osztunk
+            if (op === 'rem') {
+                // maradékos osztás a 100-as körben: hányados 1–9, minden lehetséges maradékkal
+                for (let n = t; n < (REM_MAX_QUOTIENT + 1) * t; n++) deck.push(makeQuestion('rem', t, n));
+                return;
+            }
             for (let i = 0; i <= 10; i++) {
-                if (op !== 'div') deck.push(makeQuestion('mul', t, i));
-                if (op !== 'mul' && t > 0) deck.push(makeQuestion('div', t, i)); // 0-val nem osztunk
+                if (op === 'mul' || op === 'mix') deck.push(makeQuestion('mul', t, i));
+                if ((op === 'div' || op === 'mix') && t > 0) deck.push(makeQuestion('div', t, i));
+                if (op === 'mis') deck.push(makeQuestion('mis', t, i));
             }
         });
         return deck;
@@ -1595,8 +1777,9 @@
         return arr;
     }
 
-    // szorzo_facts: { "mul:7:8": { n, ok, bone, bad, r, ms } }
-    // r: a legutóbbi válaszok (o = elsőre jó, b = csonttal javított, x = hibás); ms: az elsőre jó válaszok ideje
+    // szorzo_facts: { "mul:7:8": { n, ok, bone, bad, r, ms, t } }
+    // r: a legutóbbi válaszok (o = elsőre jó, b = csonttal javított, x = hibás); ms: az elsőre jó válaszok ideje;
+    // t: az utolsó válasz ideje (ms), ebből számolja a mai gyakorlás, mikor esedékes az ismétlés
     function loadFacts() {
         try {
             return JSON.parse(localStorage.getItem('szorzo_facts') || '{}');
@@ -1614,30 +1797,114 @@
         else f.bad++;
         f.r = (f.r + outcome).slice(-RECENT);
         if (outcome === 'o' && ms != null) f.ms = [...f.ms, Math.round(ms)].slice(-RECENT);
+        f.t = Date.now();
         facts[factKey(q)] = f;
         localStorage.setItem('szorzo_facts', JSON.stringify(facts));
-        cloudQueueAnswer(q, outcome, ms, currentMode, currentSessionId);
+        cloudQueueAnswer(q, outcome, ms, quizMode, currentSessionId);
     }
 
     function weakQuestions() {
         const facts = loadFacts();
         return Object.keys(facts)
             .filter(k => OP_SYMBOL[k.split(':')[0]] && isWeak(facts[k]))
-            .map(k => {
-                const [op, table, other] = k.split(':');
-                return { q: makeQuestion(op, +table, +other), score: factScore(facts[k]) };
-            });
+            .map(k => ({ q: questionFromKey(k), score: factScore(facts[k]) }));
+    }
+
+    /* --- MAI GYAKORLÁS --- */
+    // Egy gombnyomásra 10 feladat a gyerek eddigi eredményeiből: előbb a hibásak, aztán az esedékes ismétlések
+    // (a sorozatban elsőre jó válaszok száma szerint 1, 2, 4, 7, 14 nap után), végül néhány új feladat.
+    const DAILY_SIZE = 10;
+    const DAILY_QUOTA = { weak: 4, due: 3, fresh: 3 };
+    const REVIEW_DAYS = [1, 1, 2, 4, 7, 14];
+    const DAY_MS = 86400000;
+    const TABLE_ORDER = [2, 10, 5, 1, 0, 4, 3, 8, 6, 9, 7]; // ebben a sorrendben jönnek az új táblák
+
+    const dayIndex = ms => Math.floor((ms - new Date(ms).getTimezoneOffset() * 60000) / DAY_MS);
+
+    // 1 = ma esedékes az ismétlés, nagyobb = régóta vár (a lassú feladat legfeljebb 2 naponta jön)
+    function reviewDue(f, now) {
+        const streak = f.r.length - f.r.replace(/o+$/, '').length;
+        const box = Math.min(streak, avgMs(f) > SLOW_MS ? 2 : REVIEW_DAYS.length - 1);
+        return (dayIndex(now) - dayIndex(f.t || 0)) / REVIEW_DAYS[box];
+    }
+
+    // Új feladatok: a már gyakorolt táblák még nem látott feladatai, utána műveletenként a következő tábla
+    function freshQuestions(facts) {
+        const keys = Object.keys(facts);
+        const ops = [...new Set(keys.map(k => k.split(':')[0]).filter(op => OP_SYMBOL[op]))];
+        const inUsed = [];
+        const inNext = [];
+        (ops.length ? ops : ['mul']).forEach(op => {
+            const used = new Set(keys.filter(k => k.startsWith(`${op}:`)).map(k => +k.split(':')[1]));
+            const unseen = t => buildDeck([t], op).filter(q => !facts[factKey(q)]);
+            used.forEach(t => inUsed.push(...unseen(t)));
+            const next = TABLE_ORDER.find(t => !used.has(t) && unseen(t).length);
+            if (next !== undefined) inNext.push(...unseen(next));
+        });
+        return [...shuffle(inUsed), ...shuffle(inNext)];
+    }
+
+    // { deck, weak, review, fresh }: a feladatok és hogy miből mennyi
+    function dailyQuestions(facts = loadFacts(), now = Date.now()) {
+        const practiced = Object.keys(facts).filter(k => OP_SYMBOL[k.split(':')[0]])
+            .map(k => ({ q: questionFromKey(k), f: facts[k], due: reviewDue(facts[k], now) }));
+        const pools = {
+            weak: shuffle(practiced.filter(e => isWeak(e.f))).sort((a, b) => factScore(a.f) - factScore(b.f)),
+            due: shuffle(practiced.filter(e => !isWeak(e.f) && e.due >= 1)).sort((a, b) => b.due - a.due),
+            fresh: freshQuestions(facts).map(q => ({ q })),
+            rest: practiced.filter(e => !isWeak(e.f) && e.due < 1).sort((a, b) => (a.f.t || 0) - (b.f.t || 0)),
+        };
+        const picked = [];
+        const keys = new Set();
+        const take = (kind, max) => {
+            for (const e of pools[kind]) {
+                if (picked.length >= DAILY_SIZE || max <= 0) break;
+                if (keys.has(factKey(e.q))) continue;
+                keys.add(factKey(e.q));
+                picked.push({ q: e.q, kind });
+                max--;
+            }
+        };
+        Object.entries(DAILY_QUOTA).forEach(([kind, max]) => take(kind, max));
+        ['weak', 'due', 'fresh', 'rest'].forEach(kind => take(kind, DAILY_SIZE)); // ami még hiányzik
+        const count = (...kinds) => picked.filter(p => kinds.includes(p.kind)).length;
+        return { deck: picked.map(p => p.q), weak: count('weak'), review: count('due', 'rest'), fresh: count('fresh') };
+    }
+
+    function dailyDoneToday() {
+        const today = new Date().toDateString();
+        return JSON.parse(localStorage.getItem('szorzo_history') || '[]')
+            .some(h => h.mode === 'daily' && h.at && new Date(h.at).toDateString() === today);
+    }
+
+    function renderDaily() {
+        const done = dailyDoneToday();
+        const { weak, review, fresh } = dailyQuestions();
+        document.getElementById('daily-card').classList.toggle('done', done);
+        document.getElementById('daily-title').innerText = done ? '✅ A mai gyakorlás megvan!' : '☀️ Mai gyakorlás';
+        document.getElementById('daily-info').innerText = done ? 'Ha van kedved, jöhet még egy kör.'
+            : `${DAILY_SIZE} feladat, neked válogatva: ` +
+              [weak && `🎯 ${weak} javítás`, review && `🔁 ${review} ismétlés`, fresh && `✨ ${fresh} új`].filter(Boolean).join(' · ');
+        document.getElementById('daily-btn').innerText = done ? 'Még egy ▶' : 'Indítás ▶';
+    }
+
+    function startDaily() {
+        startQuiz(null, 'daily');
     }
 
     /* --- TESZT GENERÁLÁS ÉS INDÍTÁS --- */
     // assignmentId: ha egy kiosztott feladatot indít a gyerek (a teszt eredménye ehhez kötődik)
-    function startQuiz(assignmentId) {
+    // mode: a beállított mód, vagy 'daily' (mai gyakorlás)
+    function startQuiz(assignmentId, mode = currentMode) {
         playSound('click');
         currentAssignmentId = typeof assignmentId === 'string' ? assignmentId : null;
+        quizMode = mode;
 
         // Pakli összeállítása
         let fullDeck;
-        if (currentMode === 'weak') {
+        if (quizMode === 'daily') {
+            fullDeck = dailyQuestions().deck;
+        } else if (quizMode === 'weak') {
             // A leggyengébbek kerülnek előre, ha kevesebb feladatot kér a beállítás
             fullDeck = shuffle(weakQuestions()).sort((a, b) => a.score - b.score).map(w => w.q);
             if (fullDeck.length === 0) {
@@ -1656,8 +1923,8 @@
             }
         }
 
-        // Feladatszám vágása üzemmód szerint (a kikérdezőben mindig az összes)
-        if (currentMode !== 'exam' && questionCountSetting !== 'all') {
+        // Feladatszám vágása üzemmód szerint (a kikérdezőben mindig az összes, a mai gyakorlás mindig 10)
+        if (quizMode !== 'exam' && quizMode !== 'daily' && questionCountSetting !== 'all') {
             fullDeck = fullDeck.slice(0, Math.min(parseInt(questionCountSetting), fullDeck.length));
         }
         quizDeck = shuffle(fullDeck);
@@ -1675,16 +1942,30 @@
         quizRunId++;
         currentSessionId = newId();
         startTime = new Date();
+        hideExplanation();
 
         // Képernyő váltás
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
         document.getElementById('screen-quiz').classList.add('active');
 
-        document.getElementById('bone-badge').style.display = currentMode !== 'exam' ? 'flex' : 'none';
+        document.getElementById('bone-badge').style.display = quizMode !== 'exam' ? 'flex' : 'none';
 
         updateQuizUI();
         showNextQuestion();
         scheduleUpdate(); // teszt közben nem frissítünk
+    }
+
+    // A feladat a művelet szerint: "8 × 7 = □", "□ × 7 = 56", "38 : 7 = □, maradék □".
+    // A számok azonosítója minden formában ugyanaz (q-factor1, q-op, q-factor2).
+    function renderExpression(q) {
+        const a = `<span id="q-factor1">${q.f1}</span>`;
+        const b = `<span id="q-factor2">${q.f2}</span>`;
+        const op = `<span id="q-op">${OP_SYMBOL[q.op]}</span>`;
+        const box = `<span class="answer-display active" id="user-answer" onclick="setActiveBox('main')"></span>`;
+        document.getElementById('expression').innerHTML = q.op === 'mis'
+            ? `${box} ${op} ${b} = ${a}`
+            : `${a} ${op} ${b} = ${box}` + (q.op === 'rem'
+                ? `<div class="rem-line">maradék: <span class="answer-display" id="user-rem" onclick="setActiveBox('rem')"></span></div>` : '');
     }
 
     function showNextQuestion() {
@@ -1694,13 +1975,13 @@
         }
 
         const q = quizDeck[currentQuestionIndex];
-        document.getElementById('q-factor1').innerText = q.f1;
-        document.getElementById('q-op').innerText = OP_SYMBOL[q.op];
-        document.getElementById('q-factor2').innerText = q.f2;
+        renderExpression(q);
         currentAnswerInput = "";
-        document.getElementById('user-answer').innerText = "";
+        currentRemInput = "";
+        activeBox = 'main';
         document.getElementById('feedback').innerText = "";
         document.getElementById('feedback').className = "feedback-msg";
+        document.getElementById('hint').hidden = true;
         isBoneRetryState = false;
         boneFirstAnswer = null;
         inputLocked = false;
@@ -1731,25 +2012,52 @@
     }
 
     /* --- BEVITEL ÉS VÁLASZ ADÁS --- */
-    function appendNum(num) {
-        if (inputLocked || currentAnswerInput.length >= 3) return;
-        playSound('click');
-        // Vezető nulla helyett az új számjegy kerül be ("07" -> "7")
-        currentAnswerInput = currentAnswerInput === "0" ? num.toString() : currentAnswerInput + num;
-        document.getElementById('user-answer').innerText = currentAnswerInput;
+    // A válasz mezői: a fő válasz, és maradékos osztásnál a maradék (koppintással vagy OK-val lehet váltani)
+    function renderAnswer() {
+        const main = document.getElementById('user-answer');
+        const rem = document.getElementById('user-rem');
+        main.innerText = currentAnswerInput;
+        main.classList.toggle('active', activeBox === 'main');
+        if (rem) {
+            rem.innerText = currentRemInput;
+            rem.classList.toggle('active', activeBox === 'rem');
+        }
     }
 
-    // ⌫: az utolsó számjegy törlése
+    function setActiveBox(box) {
+        if (inputLocked || !document.getElementById('user-rem')) return;
+        activeBox = box;
+        renderAnswer();
+    }
+
+    function appendNum(num) {
+        const rem = activeBox === 'rem';
+        const value = rem ? currentRemInput : currentAnswerInput;
+        if (inputLocked || value.length >= (rem ? 2 : 3)) return;
+        playSound('click');
+        // Vezető nulla helyett az új számjegy kerül be ("07" -> "7")
+        const next = value === "0" ? num.toString() : value + num;
+        if (rem) currentRemInput = next;
+        else currentAnswerInput = next;
+        renderAnswer();
+    }
+
+    // ⌫: az utolsó számjegy törlése (az üres maradék mezőből vissza a hányadoshoz)
     function deleteDigit() {
-        if (inputLocked || currentAnswerInput === "") return;
+        if (inputLocked) return;
+        if (activeBox === 'rem' && currentRemInput === "") return setActiveBox('main');
+        if (activeBox === 'main' && currentAnswerInput === "") return;
         playSound('delete');
-        currentAnswerInput = currentAnswerInput.slice(0, -1);
-        document.getElementById('user-answer').innerText = currentAnswerInput;
+        if (activeBox === 'rem') currentRemInput = currentRemInput.slice(0, -1);
+        else currentAnswerInput = currentAnswerInput.slice(0, -1);
+        renderAnswer();
     }
 
     function clearAnswer() {
         currentAnswerInput = "";
-        document.getElementById('user-answer').innerText = "";
+        currentRemInput = "";
+        activeBox = 'main';
+        renderAnswer();
     }
 
     function handlePhysicalKeyboard(e) {
@@ -1775,21 +2083,26 @@
     }
 
     function submitAnswer() {
+        if (explainShownAt !== null) return nextAfterExplain();
         if (inputLocked || currentAnswerInput === "") return;
 
         const q = quizDeck[currentQuestionIndex];
-        const val = parseInt(currentAnswerInput);
+        // Maradékos osztásnál az első OK a maradék mezőjére visz
+        if (q.op === 'rem' && currentRemInput === "") return setActiveBox('rem');
+        const given = { main: parseInt(currentAnswerInput), rem: q.op === 'rem' ? parseInt(currentRemInput) : null };
+        const givenText = q.op === 'rem' ? `${given.main}, maradék ${given.rem}` : `${given.main}`;
         const fb = document.getElementById('feedback');
         if (firstAnswerMs === null) firstAnswerMs = performance.now() - questionShownAt;
 
-        if (val === q.target) {
+        if (given.main === q.target && (q.op !== 'rem' || given.rem === q.rem)) {
             // HELYES VÁLASZ
             playSound('correct');
             fb.innerText = "Helyes! 🎉";
             fb.className = "feedback-msg feedback-correct";
+            document.getElementById('hint').hidden = true;
             score++;
             if (isBoneRetryState) {
-                bonesList.push(`${questionText(q)} = ${q.target} (először: ${boneFirstAnswer})`);
+                bonesList.push(`${solutionText(q)} (először: ${boneFirstAnswer})`);
                 recordFact(q, 'b');
             } else {
                 recordFact(q, 'o', firstAnswerMs);
@@ -1798,31 +2111,63 @@
 
         } else {
             // HIBÁS VÁLASZ
-            if (currentMode !== 'exam' && bonesLeft > 0 && !isBoneRetryState) {
-                // Csontos javítási lehetőség
+            if (quizMode !== 'exam' && bonesLeft > 0 && !isBoneRetryState) {
+                // Csontos javítási lehetőség, egy tippel (a megoldás nélkül)
                 playSound('bone');
                 bonesLeft--;
                 bonesUsed++;
                 isBoneRetryState = true;
-                boneFirstAnswer = val;
+                boneFirstAnswer = givenText;
 
-                fb.innerText = "Nem jó! 🦴 Használtál egy csontot, próbáld újra!";
+                fb.innerText = "Nem jó! 🦴 Próbáld újra!";
                 fb.className = "feedback-msg feedback-bone";
+                const hint = document.getElementById('hint');
+                hint.innerText = `💡 ${hintFor(q, given)}`;
+                hint.hidden = false;
                 clearAnswer();
                 updateQuizUI();
             } else {
                 // Végleges hiba
                 playSound('wrong');
                 errorsCount++;
-                const answers = boneFirstAnswer !== null ? `${boneFirstAnswer}, majd ${val}` : `${val}`;
-                mistakesList.push(`${questionText(q)} = ${q.target} (A válaszod: ${answers})`);
+                const answers = boneFirstAnswer !== null ? `${boneFirstAnswer}, majd ${givenText}` : givenText;
+                mistakesList.push(`${solutionText(q)} (A válaszod: ${answers})`);
                 recordFact(q, 'x');
 
-                fb.innerText = `Sajnos nem! A helyes válasz: ${q.target}`;
+                fb.innerText = `Sajnos nem! A helyes válasz: ${answerText(q)}`;
                 fb.className = "feedback-msg feedback-wrong";
-                goToNextQuestionAfter(1600);
+                // A szülői kikérdező szigorú teszt: ott nincs levezetés, megy tovább
+                if (quizMode === 'exam') goToNextQuestionAfter(1600);
+                else showExplanation(q);
             }
         }
+    }
+
+    // Végleges hiba után: a levezetés és a pöttyös ábra a számbillentyűzet helyén, a gyerek lép tovább
+    function showExplanation(q) {
+        inputLocked = true;
+        const { text, rows } = explainFor(q);
+        document.getElementById('hint').hidden = true;
+        document.getElementById('explain-text').innerText = `Így jön ki: ${text}`;
+        document.getElementById('explain-dots').innerHTML = rows.map((row, i) =>
+            `<div class="dot-row${i && row.kind !== rows[i - 1].kind ? ' split' : ''}">${`<i class="${row.kind}"></i>`.repeat(row.n)}</div>`).join('');
+        document.getElementById('numpad').hidden = true;
+        document.getElementById('explain').hidden = false;
+        explainShownAt = performance.now();
+    }
+
+    function hideExplanation() {
+        explainShownAt = null;
+        document.getElementById('explain').hidden = true;
+        document.getElementById('numpad').hidden = false;
+    }
+
+    // "Tovább": egy dupla koppintás (az OK gomb helyén) még ne ugorja át a levezetést
+    function nextAfterExplain() {
+        if (explainShownAt === null || performance.now() - explainShownAt < 500) return;
+        hideExplanation();
+        currentQuestionIndex++;
+        showNextQuestion();
     }
 
     /* --- TESZT BEFEJEZÉSE ÉS EREDMÉNYEK --- */
@@ -1847,8 +2192,8 @@
         document.getElementById('res-title').innerText = pct >= 50 ? '🎉 Szép munka!' : '💪 Ne add fel!';
         document.getElementById('res-pct').innerText = `${pct}%`;
         document.getElementById('res-grade').innerText = gradeStr;
-        const modeNames = { practice: 'Gyakorló Mód', exam: 'Szülői Kikérdező', weak: 'Hibák Gyakorlása' };
-        document.getElementById('res-mode-badge').innerText = modeNames[currentMode];
+        const modeNames = { practice: 'Gyakorló Mód', exam: 'Szülői Kikérdező', weak: 'Hibák Gyakorlása', daily: 'Mai Gyakorlás' };
+        document.getElementById('res-mode-badge').innerText = modeNames[quizMode];
         document.getElementById('res-total').innerText = `${score}/${totalTasks}`;
         document.getElementById('res-errors').innerText = errorsCount;
         document.getElementById('res-bones-used').innerText = bonesUsed;
@@ -1876,17 +2221,18 @@
         saveResultToStorage({
             date: finishedAt.toLocaleDateString('hu-HU', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
             pct: pct,
-            mode: currentMode,
+            mode: quizMode,
             at: finishedAt.toISOString()
         });
         // Összekötött eszközön a felhőbe is (internet nélkül sorban vár), és csillag jár érte
         const assignment = currentAssignmentId &&
             JSON.parse(localStorage.getItem('szorzo_assignments') || '[]').find(a => a.id === currentAssignmentId);
+        const picked = quizMode !== 'weak' && quizMode !== 'daily'; // a hibák és a mai gyakorlás maga válogat
         const session = {
             id: currentSessionId,
-            mode: currentMode,
-            op: currentMode === 'weak' ? null : currentOp,
-            tables: currentMode === 'weak' ? [] : selectedTables,
+            mode: quizMode,
+            op: picked ? currentOp : null,
+            tables: picked ? selectedTables : [],
             total: totalTasks,
             correct: score,
             errors: errorsCount,
@@ -2055,8 +2401,16 @@
         renderHeatmap();
     }
 
+    // A térkép műveletei: szorzás és osztás mindig, a többi csak ha már gyakorolta
+    const HEATMAP_OPS = [['mul', '<b>×</b> Szorzás'], ['div', '➗ Osztás'], ['mis', '🔍 Hiányzó'], ['rem', '🍬 Maradékos']];
+
     function renderHeatmap() {
-        renderHeatmapGrid(document.getElementById('heatmap'), document.getElementById('hm-detail'), loadFacts(), heatmapOp);
+        const facts = loadFacts();
+        const ops = HEATMAP_OPS.filter(([op]) => op === 'mul' || op === 'div' || Object.keys(facts).some(k => k.startsWith(`${op}:`)));
+        if (!ops.some(([op]) => op === heatmapOp)) heatmapOp = 'mul';
+        document.getElementById('hm-ops').innerHTML = ops.map(([op, label]) =>
+            `<button class="btn-op${op === heatmapOp ? ' selected' : ''}" onclick="setHeatmapOp('${op}', this)">${label}</button>`).join('');
+        renderHeatmapGrid(document.getElementById('heatmap'), document.getElementById('hm-detail'), facts, heatmapOp);
 
         const weakCount = weakQuestions().length;
         document.getElementById('weak-summary').innerHTML = weakCount
@@ -2161,8 +2515,7 @@
 
         selectedTables = Array.isArray(saved.tables) ? saved.tables : [];
         renderTableSelector();
-        const opIndex = ['mul', 'div', 'mix'].indexOf(saved.op);
-        if (opIndex >= 0) setOp(saved.op, document.querySelectorAll('#table-picker .btn-op')[opIndex]);
+        selectOp(saved.op);
         const countIndex = [10, 20, 30, 'all'].indexOf(saved.count);
         if (countIndex >= 0) setCount(saved.count, document.querySelectorAll('.btn-count')[countIndex]);
         if (['practice', 'exam', 'weak'].includes(saved.mode)) setMode(saved.mode);
@@ -2179,7 +2532,7 @@
     }
 
     /* --- VERZIÓ ÉS MEGOSZTÁS --- */
-    const APP_VERSION = '1.7';
+    const APP_VERSION = '1.8';
     const APP_BUILD = 'dev'; // a közzététel (GitHub Actions) írja át a commit rövid azonosítójára
     const APP_URL = 'https://vmynick.github.io/matek-gyakorlo/';
 
@@ -2396,8 +2749,6 @@
     }
 
     /* --- KIOSZTOTT FELADATOK (a szülőtől / tanártól, összekötött eszközön) --- */
-    const OP_NAMES = { mul: 'szorzás', div: 'osztás', mix: 'vegyes' };
-
     // Hány nap van a határidőig (a határidő napja még belefér); negatív = lejárt
     function dueDays(dateStr) {
         const [y, m, d] = dateStr.split('-').map(Number);
@@ -2508,8 +2859,7 @@
     function startAssignment(a) {
         selectedTables = [...a.tables];
         renderTableSelector();
-        const opIndex = ['mul', 'div', 'mix'].indexOf(a.op);
-        setOp(a.op, document.querySelectorAll('#table-picker .btn-op')[opIndex]);
+        selectOp(a.op);
         setMode(a.mode === 'exam' ? 'exam' : 'practice');
         questionCountSetting = a.question_count || 'all';
         document.querySelectorAll('.btn-count').forEach(b => b.classList.remove('selected'));

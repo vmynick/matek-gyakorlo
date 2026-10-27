@@ -646,11 +646,12 @@
 
         .op-toggle {
             display: flex;
+            flex-wrap: wrap;
             gap: 6px;
         }
 
         .op-toggle button {
-            flex: 1;
+            flex: 1 1 auto;
             padding: 6px;
             border: 1px solid var(--border-strong);
             border-radius: 8px;
@@ -782,12 +783,18 @@
         <!-- Admin -->
         <div class="console" id="admin-card" hidden>
             <section class="card">
-                <h2>✉️ Szülő vagy tanár meghívása</h2>
-                <p class="muted">Belépő linket kap e-mailben. A szülő családot hoz létre a saját gyerekeinek, a tanár osztályt.</p>
+                <h2>⚙️ Funkciók</h2>
+                <label class="toggle-row"><input type="checkbox" id="teachers-enabled" onchange="setTeachersEnabled(this.checked)">
+                    🏫 Tanári funkciók – osztályok, tanárok</label>
+                <p class="muted" id="teachers-help"></p>
+            </section>
+            <section class="card">
+                <h2 id="creator-title">✉️ Szülő vagy tanár meghívása</h2>
+                <p class="muted" id="creator-help">Belépő linket kap e-mailben. A szülő családot hoz létre a saját gyerekeinek, a tanár osztályt.</p>
                 <form onsubmit="inviteCreator(event)">
                     <input type="email" id="creator-email" required placeholder="nev@pelda.hu">
                     <label class="toggle-row"><input type="checkbox" id="creator-family" checked> 🏠 Szülő – családot hozhat létre</label>
-                    <label class="toggle-row"><input type="checkbox" id="creator-class"> 🏫 Tanár – osztályt hozhat létre</label>
+                    <label class="toggle-row" id="creator-class-row"><input type="checkbox" id="creator-class"> 🏫 Tanár – osztályt hozhat létre</label>
                     <button class="btn">Meghívás</button>
                 </form>
                 <p class="msg" id="creator-msg"></p>
@@ -854,6 +861,8 @@
                 <div class="op-toggle">
                     <button class="selected" onclick="setGroupHeatmapOp('mul', this)"><b>×</b> Szorzás</button>
                     <button onclick="setGroupHeatmapOp('div', this)">➗ Osztás</button>
+                    <button onclick="setGroupHeatmapOp('mis', this)">🔍 Hiányzó tényező</button>
+                    <button onclick="setGroupHeatmapOp('rem', this)">🍬 Maradékos</button>
                 </div>
                 <div class="heatmap-wrap"><div class="heatmap" id="group-heatmap"></div></div>
                 <div class="hm-legend">
@@ -903,6 +912,8 @@
                                     <option value="mul">× Szorzás</option>
                                     <option value="div">➗ Osztás</option>
                                     <option value="mix">🔀 Vegyes</option>
+                                    <option value="mis">🔍 Hiányzó tényező (? × 7 = 56)</option>
+                                    <option value="rem">🍬 Maradékos osztás (38 : 7)</option>
                                 </select>
                                 <select id="assign-mode" aria-label="Mód"
                                         onchange="document.getElementById('assign-count').hidden = this.value === 'exam'">
@@ -942,6 +953,8 @@
                     <div class="op-toggle">
                         <button class="selected" onclick="setChildHeatmapOp('mul', this)"><b>×</b> Szorzás</button>
                         <button onclick="setChildHeatmapOp('div', this)">➗ Osztás</button>
+                        <button onclick="setChildHeatmapOp('mis', this)">🔍 Hiányzó tényező</button>
+                        <button onclick="setChildHeatmapOp('rem', this)">🍬 Maradékos</button>
                     </div>
                     <div class="heatmap-wrap"><div class="heatmap" id="child-heatmap"></div></div>
                     <div class="hm-legend">

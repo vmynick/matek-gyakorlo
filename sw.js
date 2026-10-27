@@ -8,6 +8,7 @@ const FILES = [
     './',
     'szorzotabla.html',
     'stats.js',
+    'hints.js',
     'common.css',
     'config.js',
     'cloud.js',

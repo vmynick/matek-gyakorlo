@@ -17,7 +17,8 @@ const mailer = window.supabase.createClient(CLOUD_CONFIG.url, CLOUD_CONFIG.key, 
     auth: { storageKey: 'szorzo-meghivo', persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
 });
 
-let me = null; // { id, email, is_admin, can_create_groups }
+let me = null; // { id, email, is_admin, can_create_groups, can_create_classes }
+let settings = { teachers_enabled: false }; // az admin kapcsolja: tanári funkciók (osztályok)
 let groups = [];
 let currentChild = null;
 let childFacts = {};
@@ -134,6 +135,9 @@ async function loadHome() {
         .select('id, email, is_admin, can_create_groups, can_create_classes').eq('id', user.id).single();
     if (error) return fail(error);
     me = adult;
+    const { data: appSettings, error: settingsError } = await sb.from('app_settings').select('teachers_enabled').maybeSingle();
+    if (settingsError) return fail(settingsError);
+    settings = appSettings || { teachers_enabled: false };
 
     const { data, error: groupError } = await sb.from('groups').select(`
         id, name, kind,
@@ -148,13 +152,16 @@ async function loadHome() {
 }
 
 // Szerepek (a fejlécben és a Fiók fülön). Szülő: családot hozhat létre, vagy egy család tagja (pl. a másik szülő).
-// Tanár: osztályt hozhat létre, vagy egy osztály tanára. Admin: szülőket és tanárokat hív meg.
+// Tanár: osztályt hozhat létre, vagy egy osztály tanára (csak ha az admin bekapcsolta a tanári funkciókat).
+// Admin: szülőket és tanárokat hív meg.
 const isParent = () => me.can_create_groups || groups.some(g => g.kind === 'family');
-const isTeacher = () => me.can_create_classes || groups.some(g => g.kind === 'class');
+const isTeacher = () => settings.teachers_enabled && (me.can_create_classes || groups.some(g => g.kind === 'class'));
 
 function myRoles() {
     const roles = [];
-    if (me.is_admin) roles.push({ label: '🛡️ Admin', what: 'szülőket és tanárokat hívhat meg, jogokat adhat és vonhat meg' });
+    if (me.is_admin) {
+        roles.push({ label: '🛡️ Admin', what: `${settings.teachers_enabled ? 'szülőket és tanárokat' : 'szülőket'} hívhat meg, jogokat adhat és vonhat meg` });
+    }
     if (isParent()) {
         roles.push({ label: '🏠 Szülő', what: me.can_create_groups ? 'családot hozhat létre, gyerekeket vehet fel'
             : 'egy család tagja: látja a család gyerekeit' });
@@ -254,7 +261,9 @@ function renderFamilyHome() {
             <span class="kid-meta" data-meta="${c.id}">${esc(lastSeen(c))}</span>
         </button>`).join('') || `<p class="muted">${families.length
             ? 'Még nincs gyerek. Lent, a családodnál add hozzá („Gyerek hozzáadása”).'
-            : 'Hozz létre lent egy családot, és vedd fel a gyerekeidet. Ha a tanár adott csatlakozási kódot, azt a gyereked oldalán írd be.'}</p>`;
+            : !me.can_create_groups && me.can_create_classes && !settings.teachers_enabled
+                ? 'A tanári funkciók (osztályok) jelenleg ki vannak kapcsolva. Ha újra bekapcsolják, itt látod az osztályaidat.'
+                : 'Hozz létre lent egy családot, és vedd fel a gyerekeidet. Ha a tanár adott csatlakozási kódot, azt a gyereked oldalán írd be.'}</p>`;
     box.querySelectorAll('[data-child]').forEach(b => { b.onclick = () => openChild(b.dataset.child); });
 
     const wrap = document.getElementById('family-groups');
@@ -566,8 +575,10 @@ async function inviteCreator(event) {
     const msgEl = document.getElementById('creator-msg');
     const email = document.getElementById('creator-email').value.trim().toLowerCase();
     const families = document.getElementById('creator-family').checked;
-    const classes = document.getElementById('creator-class').checked;
-    if (!families && !classes) return setMsg(msgEl, 'error', 'Válaszd ki, szülőként vagy tanárként hívod-e meg.');
+    const classes = settings.teachers_enabled && document.getElementById('creator-class').checked;
+    if (!families && !classes) {
+        return setMsg(msgEl, 'error', settings.teachers_enabled ? 'Válaszd ki, szülőként vagy tanárként hívod-e meg.' : 'Jelöld be a szülő szerepet.');
+    }
     setMsg(msgEl, '', 'Meghívás…');
     const { data: result, error } = await sb.rpc('admin_invite', { p_email: email, p_families: families, p_classes: classes });
     if (error) return setMsg(msgEl, 'error', error.message);
@@ -642,6 +653,7 @@ function applyChildRights() {
     const primaryOwner = hasFamily ? groupsOfChild.some(g => g.kind === 'family' && g.is_owner) : currentChild.owner;
     ['child-edit-box', 'child-join-box', 'child-devices-card', 'child-pin-card', 'clear-stats-btn']
         .forEach(id => { document.getElementById(id).hidden = !primary; });
+    if (!settings.teachers_enabled) document.getElementById('child-join-box').hidden = true; // osztály nélkül nincs kód
     document.getElementById('delete-child-btn').hidden = !primaryOwner;
     document.getElementById('child-danger-card').hidden = !primary && !primaryOwner;
 }
@@ -819,9 +831,9 @@ async function loadChildGroups() {
         };
     });
 
-    // Hozzáadni a saját csoportjaimhoz lehet, amelyikben még nincs benne
+    // Hozzáadni a saját csoportjaimhoz lehet, amelyikben még nincs benne (osztályba csak bekapcsolt tanári funkciókkal)
     const inIds = new Set(data.map(g => g.group_id));
-    const targets = groups.filter(g => !inIds.has(g.id));
+    const targets = groups.filter(g => !inIds.has(g.id) && (g.kind === 'family' || settings.teachers_enabled));
     const select = document.getElementById('child-target-group');
     select.innerHTML = targets.map(g => `<option value="${g.id}">${g.kind === 'class' ? '🏫' : '🏠'} ${esc(g.name)}</option>`).join('');
     document.getElementById('child-add-group').hidden = !targets.length;
@@ -871,21 +883,50 @@ async function joinClass(event) {
 
 /* ---------- Admin: felnőttek kezelése ---------- */
 
+// A tanári funkciók kapcsolója; kikapcsolva a tanár szerep és az osztályok nem látszanak
+function renderTeacherSwitch() {
+    const on = settings.teachers_enabled;
+    document.getElementById('teachers-enabled').checked = on;
+    document.getElementById('teachers-help').innerText = on
+        ? 'Bekapcsolva: tanárt is meghívhatsz, a tanárok osztályt hozhatnak létre, a szülők csatlakozási kóddal tehetik be a gyereküket.'
+        : 'Kikapcsolva (alapállapot): csak szülők és családok vannak. Nincs Osztályaim fül, nem lehet tanárt meghívni, ' +
+          'osztályt létrehozni és csatlakozási kódot használni. A meglévő osztályok megmaradnak, visszakapcsoláskor újra látszanak.';
+    document.getElementById('creator-title').innerText = on ? '✉️ Szülő vagy tanár meghívása' : '✉️ Szülő meghívása';
+    document.getElementById('creator-help').innerText = on
+        ? 'Belépő linket kap e-mailben. A szülő családot hoz létre a saját gyerekeinek, a tanár osztályt.'
+        : 'Belépő linket kap e-mailben, és családot hozhat létre a saját gyerekeinek.';
+    document.getElementById('creator-class-row').hidden = !on;
+    if (!on) document.getElementById('creator-class').checked = false;
+}
+
+async function setTeachersEnabled(on) {
+    const { error } = await sb.rpc('admin_set_teachers_enabled', { p_enabled: on });
+    if (error) {
+        document.getElementById('teachers-enabled').checked = !on;
+        return fail(error);
+    }
+    toast(on ? '🏫 Tanári funkciók bekapcsolva' : '🏫 Tanári funkciók kikapcsolva');
+    loadHome(); // a fülek, a szerepek és a meghívó is változik
+}
+
 async function loadAdmin() {
+    renderTeacherSwitch();
     const { data, error } = await sb.rpc('admin_adults');
     if (error) return fail(error);
     const list = document.getElementById('admin-adults');
     document.getElementById('admin-count').innerText = data.length;
+    const teachersOn = settings.teachers_enabled;
     list.innerHTML = data.map(a => {
         const self = a.id === me.id;
-        const groupsText = a.groups.map(g => `${g.kind === 'class' ? '🏫' : '🏠'} ${esc(g.name)}${g.role === 'owner' ? ' (tulajdonos)' : ''}`).join(', ') || 'nincs csoportja';
-        const roles = [a.is_admin && '🛡️ Admin', rightsText(a.can_create_groups, a.can_create_classes)].filter(Boolean).join(' · ');
+        const groupsText = a.groups.filter(g => g.kind === 'family' || teachersOn)
+            .map(g => `${g.kind === 'class' ? '🏫' : '🏠'} ${esc(g.name)}${g.role === 'owner' ? ' (tulajdonos)' : ''}`).join(', ') || 'nincs csoportja';
+        const roles = [a.is_admin && '🛡️ Admin', rightsText(a.can_create_groups, teachersOn && a.can_create_classes)].filter(Boolean).join(' · ');
         return settingItem(a.is_admin ? '🛡️' : '👤', `${esc(a.email)}${self ? ' (te)' : ''}`,
-            `${roles || 'meghívott családtag / tanártárs'} · belépett: ${esc(whenText(a.last_sign_in_at))}`, `
+            `${roles || (teachersOn ? 'meghívott családtag / tanártárs' : 'meghívott családtag')} · belépett: ${esc(whenText(a.last_sign_in_at))}`, `
             <p class="muted">Csoportjai: ${groupsText}</p>
             <label class="toggle-row"><input type="checkbox" data-rights="${a.id}" data-kind="family" ${a.can_create_groups ? 'checked' : ''}>
                 🏠 Szülő – családot hozhat létre</label>
-            <label class="toggle-row"><input type="checkbox" data-rights="${a.id}" data-kind="class" ${a.can_create_classes ? 'checked' : ''}>
+            <label class="toggle-row"${teachersOn ? '' : ' hidden'}><input type="checkbox" data-rights="${a.id}" data-kind="class" ${a.can_create_classes ? 'checked' : ''}>
                 🏫 Tanár – osztályt hozhat létre</label>
             ${self ? '' : `
             <p class="muted">A hozzáférés megvonása törli a fiókot; ahol egyedül volt, a csoportját és a csak abban lévő gyerekeket is.</p>
@@ -1062,8 +1103,6 @@ async function deleteChild() {
 let currentGroup = null;
 let groupFacts = {};
 let groupHeatmapOp = 'mul';
-const TABLE_SUFFIX = ['s', 'es', 'es', 'as', 'es', 'ös', 'os', 'es', 'as', 'es', 'es'];
-const OP_NAMES = { mul: 'szorzás', div: 'osztás', mix: 'vegyes' };
 
 async function openGroup(id) {
     const g = groups.find(x => x.id === id);

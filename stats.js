@@ -1,21 +1,35 @@
 /* Szorzótábla Mester – közös statisztika: feladatok, feladat-térkép (hőtérkép) és a fejlődés grafikon.
    A gyakorló app (szorzotabla.html) és a szülői / tanári felület (szulo.html) is ezt használja. */
 
-// Egy feladat: op ('mul' vagy 'div'), table (a tábla), other (a másik szám).
-// Szorzás: other × table = ? (a tankönyv szerint: 4-es tábla = 1 × 4, 2 × 4, 3 × 4 ...)
-// Osztás (bennfoglalás): (other·table) : table = other
-const OP_SYMBOL = { mul: '×', div: ':' };
+// Egy feladat: op, table (a tábla), other (a másik szám).
+// Szorzás (mul): other × table = ? (a tankönyv szerint: 4-es tábla = 1 × 4, 2 × 4, 3 × 4 ...)
+// Osztás, bennfoglalás (div): (other·table) : table = other
+// Hiányzó tényező (mis): ? × table = other·table, a válasz other
+// Maradékos osztás (rem): other : table = hányados, maradék (other az osztandó, table az osztó)
+const OP_SYMBOL = { mul: '×', div: ':', mis: '×', rem: ':' };
+const OP_NAMES = { mul: 'szorzás', div: 'osztás', mix: 'vegyes', mis: 'hiányzó tényező', rem: 'maradékos osztás' };
 const RECENT = 5; // ennyi legutóbbi választ tartunk meg feladatonként
 const SLOW_MS = 6000; // ennél lassabb átlagos válasz "lassú" a térképen
+const REM_MAX_QUOTIENT = 9; // maradékos osztás a 100-as körben: a hányados 1–9
+// Magyar rag a szám kiejtése szerint: 0-s, 3-as, 5-ös, 6-os...
+const TABLE_SUFFIX = ['s', 'es', 'es', 'as', 'es', 'ös', 'os', 'es', 'as', 'es', 'es'];
 
 function makeQuestion(op, table, other) {
-    return op === 'div'
-        ? { op, table, other, f1: table * other, f2: table, target: other }
-        : { op, table, other, f1: other, f2: table, target: table * other };
+    if (op === 'div' || op === 'mis') return { op, table, other, f1: table * other, f2: table, target: other };
+    if (op === 'rem') return { op, table, other, f1: other, f2: table, target: Math.floor(other / table), rem: other % table };
+    return { op, table, other, f1: other, f2: table, target: table * other };
 }
 
 const factKey = q => `${q.op}:${q.table}:${q.other}`;
-const questionText = q => `${q.f1} ${OP_SYMBOL[q.op]} ${q.f2}`;
+// A feladat, ahogy a gyerek látja ("8 × 7", "? × 7 = 56"), és megoldva ("8 × 7 = 56", "38 : 7 = 5, maradék 3")
+const questionText = q => (q.op === 'mis' ? `? × ${q.f2} = ${q.f1}` : `${q.f1} ${OP_SYMBOL[q.op]} ${q.f2}`);
+const answerText = q => (q.op === 'rem' ? `${q.target}, maradék ${q.rem}` : `${q.target}`);
+const solutionText = q => (q.op === 'mis' ? `${questionText(q)} → ${q.target}` : `${questionText(q)} = ${answerText(q)}`);
+
+function questionFromKey(key) {
+    const [op, table, other] = key.split(':');
+    return OP_SYMBOL[op] ? makeQuestion(op, +table, +other) : null;
+}
 
 // Feladatonkénti statisztika: { n, ok, bone, bad, r, ms }
 // r: a legutóbbi válaszok (o = elsőre jó, b = csonttal javított, x = hibás); ms: az elsőre jó válaszok ideje
@@ -38,18 +52,34 @@ const STAR_RULES = '1 ⭐ minden legalább 10 feladatos tesztért (a hibák gyak
 const levelOf = s => (s >= 0.9 ? 4 : s >= 0.7 ? 3 : s >= 0.5 ? 2 : s >= 0.3 ? 1 : 0);
 const heatLevel = f => levelOf(factScore(f));
 
+const HEATMAP_HELP = {
+    mul: 'Sor: melyik tábla, oszlop: hányszor (a 7-es sor 8-as oszlopa: 8 × 7).',
+    div: 'Sor: osztó, oszlop: hányados (a 7-es sor 8-as oszlopa: 56 : 7).',
+    mis: 'Sor: a tábla, oszlop: a hiányzó szám (a 7-es sor 8-as oszlopa: ? × 7 = 56).',
+    rem: 'Sor: osztó, oszlop: hányados, egy mezőben az összes maradék (a 7-es sor 5-ös oszlopa: 35–41 : 7).',
+};
+
+// Egy maradékos osztás mező: az osztó (t) és a hányados (c) összes maradékkal
+const remCellTitle = (t, c) => (t === 1 ? solutionText(makeQuestion('rem', 1, c))
+    : `${c * t}–${c * t + t - 1} : ${t} = ${c}, maradék 0–${t - 1}`);
+
 // A feladat-térkép kirajzolása: sor = tábla (osztásnál osztó), oszlop = hányszor (osztásnál hányados).
-// opts (a csoport-összesítéshez): score(f) 0..1, slow(f), detail(q, f) -> HTML
+// Maradékos osztásnál egy mező az azonos hányadosú feladatok együtt (a maradékok átlaga).
+// opts (a csoport-összesítéshez): score(f) 0..1, slow(f), detail(q, f) -> HTML, detailMany(title, [[q, f]]) -> HTML
 function renderHeatmapGrid(grid, detailEl, facts, op, opts = {}) {
     const score = opts.score || factScore;
     const slow = opts.slow || (f => avgMs(f) > SLOW_MS);
     const detail = opts.detail || factDetailHtml;
-    const isDiv = op === 'div';
+    const detailMany = opts.detailMany || factsDetailHtml;
+    const isRem = op === 'rem';
+    const firstRow = op === 'mul' ? 0 : 1; // 0-val nem osztunk
+    const cols = [];
+    for (let c = isRem ? 1 : 0; c <= (isRem ? REM_MAX_QUOTIENT : 10); c++) cols.push(c);
     grid.innerHTML = '';
-    grid.style.setProperty('--hm-rows', isDiv ? 11 : 12); // a rács méretezéséhez (fejléc + táblák)
-    detailEl.innerText = isDiv
-        ? 'Sor: osztó, oszlop: hányados (a 7-es sor 8-as oszlopa: 56 : 7). Koppints egy mezőre a részletekért!'
-        : 'Sor: melyik tábla, oszlop: hányszor (a 7-es sor 8-as oszlopa: 8 × 7). Koppints egy mezőre a részletekért!';
+    // a rács méretezéséhez (fejléc + táblák)
+    grid.style.setProperty('--hm-rows', 12 - firstRow);
+    grid.style.setProperty('--hm-cols', cols.length + 1);
+    detailEl.innerText = `${HEATMAP_HELP[op]} Koppints egy mezőre a részletekért!`;
 
     const addHead = text => {
         const el = document.createElement('div');
@@ -59,21 +89,27 @@ function renderHeatmapGrid(grid, detailEl, facts, op, opts = {}) {
     };
 
     addHead(OP_SYMBOL[op]);
-    for (let c = 0; c <= 10; c++) addHead(c);
-    for (let t = isDiv ? 1 : 0; t <= 10; t++) {
+    cols.forEach(addHead);
+    for (let t = firstRow; t <= 10; t++) {
         addHead(t);
-        for (let c = 0; c <= 10; c++) {
-            const q = makeQuestion(op, t, c);
-            const f = facts[factKey(q)];
+        for (const c of cols) {
+            const qs = [];
+            if (isRem) for (let n = c * t; n < (c + 1) * t; n++) qs.push(makeQuestion('rem', t, n));
+            else qs.push(makeQuestion(op, t, c));
+            const items = qs.map(q => [q, facts[factKey(q)]]).filter(([, f]) => f);
             const cell = document.createElement('button');
-            cell.className = `hm-cell ${f ? 'hm-l' + levelOf(score(f)) : 'hm-none'}`;
-            if (f && slow(f)) cell.classList.add('slow');
-            cell.innerText = isDiv ? q.f1 : q.target; // osztásnál az osztandó, szorzásnál a szorzat
-            cell.title = `${questionText(q)} = ${q.target}`;
+            const avg = items.reduce((s, [, f]) => s + score(f), 0) / items.length;
+            cell.className = `hm-cell ${items.length ? 'hm-l' + levelOf(avg) : 'hm-none'}`;
+            if (items.length && items.filter(([, f]) => slow(f)).length * 2 >= items.length) cell.classList.add('slow');
+            // szorzásnál a szorzat, osztásnál az osztandó, maradékos osztásnál a legkisebb osztandó
+            cell.innerText = op === 'mul' ? qs[0].target : qs[0].f1;
+            const title = isRem ? remCellTitle(t, c) : solutionText(qs[0]);
+            cell.title = title;
             cell.onclick = () => {
                 grid.querySelectorAll('.hm-cell.selected').forEach(c => c.classList.remove('selected'));
                 cell.classList.add('selected');
-                detailEl.innerHTML = f ? detail(q, f) : `<strong>${questionText(q)} = ${q.target}</strong><br>Még nem szerepelt.`;
+                if (!items.length) detailEl.innerHTML = `<strong>${title}</strong><br>Még nem szerepelt.`;
+                else detailEl.innerHTML = isRem ? detailMany(title, items) : detail(...items[0]);
             };
             grid.appendChild(cell);
         }
@@ -87,21 +123,35 @@ const escHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '
 function factDetailHtml(q, f) {
     const icons = { o: '✅', b: '🦴', x: '❌' };
     const ms = avgMs(f);
-    return `<strong>${questionText(q)} = ${q.target}</strong>${isWeak(f) ? ' · 🎯 gyakorlásra vár' : ''}<br>` +
+    return `<strong>${solutionText(q)}</strong>${isWeak(f) ? ' · 🎯 gyakorlásra vár' : ''}<br>` +
         `${f.n} válasz: ✅ ${f.ok} · 🦴 ${f.bone} · ❌ ${f.bad}` +
         (ms !== null ? ` · átlag ${msText(ms)}` : '') +
         `<br>Legutóbbiak: ${[...f.r].map(c => icons[c]).join(' ')}`;
 }
 
+// Egy gyerek több feladata egy mezőben (maradékos osztás): összesen, és melyik vár gyakorlásra
+function factsDetailHtml(title, items) {
+    const sum = k => items.reduce((s, [, f]) => s + f[k], 0);
+    const weak = items.filter(([, f]) => isWeak(f)).map(([q]) => questionText(q));
+    return `<strong>${title}</strong><br>${sum('n')} válasz: ✅ ${sum('ok')} · 🦴 ${sum('bone')} · ❌ ${sum('bad')}<br>` +
+        (weak.length ? `🎯 Gyakorlásra vár: ${weak.join(', ')}` : `🎉 ${items.length} feladat gyakorolva, egyik sem vár gyakorlásra.`);
+}
+
+const kidList = kids => kids.map(k => `${escHtml(k.avatar)} ${escHtml(k.nickname)}`).join(', ');
+
 // Csoport-összesítés egy feladatra (group_facts sor): hány gyerek gyakorolta, kinek kell még
 const GROUP_HEATMAP = {
     score: f => f.avg_score,
     slow: f => f.avg_ms != null && f.avg_ms > SLOW_MS,
-    detail: (q, f) => `<strong>${questionText(q)} = ${q.target}</strong> · ${f.kids} gyerek gyakorolta` +
+    detail: (q, f) => `<strong>${solutionText(q)}</strong> · ${f.kids} gyerek gyakorolta` +
         (f.avg_ms != null ? ` · átlag ${msText(f.avg_ms)}` : '') + '<br>' +
-        (f.weak_kids.length
-            ? `🎯 Gyakorolnia kell: ${f.weak_kids.map(k => `${escHtml(k.avatar)} ${escHtml(k.nickname)}`).join(', ')}`
-            : '🎉 Mindenkinek megy, aki gyakorolta.'),
+        (f.weak_kids.length ? `🎯 Gyakorolnia kell: ${kidList(f.weak_kids)}` : '🎉 Mindenkinek megy, aki gyakorolta.'),
+    detailMany: (title, items) => {
+        const weak = new Map();
+        items.forEach(([, f]) => f.weak_kids.forEach(k => weak.set(`${k.avatar}${k.nickname}`, k)));
+        return `<strong>${title}</strong> · ${Math.max(...items.map(([, f]) => f.kids))} gyerek gyakorolta<br>` +
+            (weak.size ? `🎯 Gyakorolnia kell: ${kidList([...weak.values()])}` : '🎉 Mindenkinek megy, aki gyakorolta.');
+    },
 };
 
 // group_facts sorai -> { "mul:7:8": {...} }

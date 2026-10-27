@@ -11,6 +11,16 @@ Szorzótábla- és bennfoglalás-gyakorló web-app alsósoknak, tabletre és tel
 ## Mit tud?
 
 - **Szorzás, osztás (bennfoglalás) vagy vegyesen**, a 0–10-es táblákból. A szorzás a tankönyv szerinti sorrendben jelenik meg: a 4-es tábla 1 × 4, 2 × 4 … 10 × 4.
+- **Hiányzó tényező** (`? × 7 = 56`) és **maradékos osztás** (`38 : 7 = 5, maradék 3`) a 100-as körben, külön mezővel a maradéknak.
+- **☀️ Mai gyakorlás:** egy gombnyomásra 10 feladat a gyerek eddigi eredményeiből:
+  - előbb a hibásak;
+  - aztán az esedékes ismétlések: a sorozatban elsőre jó válaszok számától függően 1, 2, 4, 7 vagy 14 nap után kerül elő újra egy feladat;
+  - végül néhány új feladat, előbb a már gyakorolt táblákból, utána a következő táblából.
+- **Segítség rossz válasz után:**
+  - csontnál egy tipp, ami nem árulja el az eredményt, csak egy lépést mutat (pl. *9 × 7 = 10 × 7 − 7, és 10 × 7 = 70*);
+  - végleges hibánál a teljes levezetés, egy pöttyös ábrával. A gyerek a „Tovább” gombbal lép tovább.
+
+  A szülői kikérdező szigorú marad: ott nincs tipp.
 - **Gyakorló mód:** 3 „csont” jár, vagyis három rossz válasz egyszer javítható.
 - **Szülői kikérdező:** szigorú teszt csont nélkül, a kiválasztott táblák minden feladata pontosan egyszer szerepel.
 - **Hibák gyakorlása:** a korábban rontott vagy csonttal javított feladatokat kérdezi újra. Egy feladat akkor kerül le a listáról, ha kétszer egymás után elsőre jó.
@@ -26,6 +36,9 @@ Szorzótábla- és bennfoglalás-gyakorló web-app alsósoknak, tabletre és tel
   - **🏠 Szülő:** családot hoz létre a gyerekeinek; a másik szülőt, nagyszülőt családtagként hívja meg;
   - **🏫 Tanár:** osztályt hoz létre, tanártársat és szülőket hív meg;
   - **🛡️ Admin:** szülőket és tanárokat hív meg, és a szerepüket is állítja.
+- **A tanári funkciók (osztályok) az Admin fülön kapcsolhatók, és alapból ki vannak kapcsolva.**
+  - Kikapcsolva csak szülők és családok vannak. Nem lehet tanárt meghívni, osztályt létrehozni és csatlakozási kódot használni; ezt az adatbázis is ellenőrzi.
+  - A meglévő osztályok megmaradnak, és visszakapcsoláskor újra látszanak.
 - **Csoportok:** a család vagy az osztály; gyerekeket ad hozzá (csak becenév és avatar).
 - **A gyerek eszközét egy 6 jegyű kód köti össze** a gyerek profiljával. A gyereknek nem kell fiók. Ezután az eredményei minden eszközén közösek, és a felnőttek látják a grafikonját és a feladat-térképét.
 - **Internet nélkül is lehet gyakorolni:** az eredmények megvárják a következő kapcsolatot.
@@ -63,6 +76,7 @@ Build lépés nincs, a fájlok:
 - [szorzotabla.html](szorzotabla.html): a gyakorló app;
 - [szulo.html](szulo.html) és [szulo.js](szulo.js): a szülői / tanári felület;
 - [stats.js](stats.js) és [common.css](common.css): közös statisztika és színek;
+- [hints.js](hints.js): a tippek és a levezetések rossz válasz után;
 - [cloud.js](cloud.js): a gyerek eszközének szinkronja;
 - [sw.js](sw.js): offline működés.
 

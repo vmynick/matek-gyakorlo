@@ -266,13 +266,14 @@ function cloudMarkAssignmentDone(assignmentId) {
     cloudWrite('szorzo_assignments', list.map(a => (a.id === assignmentId ? { ...a, done: true } : a)));
 }
 
-// child_facts sorai -> { "mul:7:8": { n, ok, bone, bad, r, ms } } (a szülői felület is használja)
+// child_facts sorai -> { "mul:7:8": { n, ok, bone, bad, r, ms, t } } (a szülői felület is használja)
 function factsFromCloud(rows) {
     const facts = {};
     for (const f of rows || []) {
         facts[`${f.op}:${f.tbl}:${f.other}`] = {
             n: f.n, ok: f.ok, bone: f.bone, bad: f.bad, r: f.recent || '',
             ms: f.avg_ms != null ? [f.avg_ms] : [],
+            t: f.last_at ? Date.parse(f.last_at) : 0,
         };
     }
     return facts;
@@ -324,7 +325,7 @@ function cloudImportLocal(childId) {
     const now = Date.now();
     for (const [key, f] of Object.entries(facts)) {
         const [op, tbl, other] = key.split(':');
-        if (!['mul', 'div'].includes(op)) continue;
+        if (!OP_SYMBOL[op]) continue;
         const outcomes = [...(f.r || '')];
         const times = [...(f.ms || [])];
         outcomes.forEach((outcome, i) => {
@@ -339,7 +340,7 @@ function cloudImportLocal(childId) {
     history.forEach((h, i) => {
         const at = h.at ? new Date(h.at) : new Date(now - (history.length - i) * 60000);
         box.sessions.push({
-            id: newId(), child_id: childId, mode: ['practice', 'exam', 'weak'].includes(h.mode) ? h.mode : 'practice',
+            id: newId(), child_id: childId, mode: ['practice', 'exam', 'weak', 'daily'].includes(h.mode) ? h.mode : 'practice',
             pct: h.pct, finished_at: (isNaN(at) ? new Date(now) : at).toISOString(), imported: true,
         });
     });

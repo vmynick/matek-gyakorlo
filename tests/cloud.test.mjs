@@ -62,6 +62,7 @@ async function resetDatabase() {
     const { data } = await admin('GET', '/users?per_page=1000');
     for (const u of (data && data.users) || []) await admin('DELETE', `/users/${u.id}`);
     await sql('test', 'truncate public.invitations, public.groups, public.children, public.device_code_attempts cascade;');
+    await sql('test', 'update public.app_settings set teachers_enabled = false;'); // alapállapot: tanári funkciók kikapcsolva
 }
 
 const invite = (email, extra = '') => sql('test',
@@ -152,14 +153,17 @@ async function playExam(page, table, wrongFirst = 0) {
     await answerUntilResults(page, wrongFirst);
 }
 
-// Végigválaszolja a futó tesztet (az első wrongFirst feladatot rosszul), aztán vissza a beállításokhoz
+// Végigválaszolja a futó tesztet (az első wrongFirst feladatot rosszul), aztán vissza a beállításokhoz.
+// Maradékos osztásnál az első OK a maradék mezőjére visz.
 async function answerUntilResults(page, wrongFirst = 0, restart = true) {
+    const type = async (n) => { for (const d of String(n)) await page.getByRole('button', { name: d, exact: true }).click(); };
     for (let i = 0; i < 40 && await page.locator('#screen-quiz.active').count(); i++) {
-        const q = await page.evaluate(() => {
-            const a = +document.getElementById('q-factor1').innerText, b = +document.getElementById('q-factor2').innerText;
-            return document.getElementById('q-op').innerText.trim() === ':' ? a / b : a * b;
-        });
-        for (const d of String(i < wrongFirst ? q + 1 : q)) await page.getByRole('button', { name: d, exact: true }).click();
+        const q = await page.evaluate(() => { const q = quizDeck[currentQuestionIndex]; return { ans: q.target, rem: q.rem ?? null }; });
+        await type(i < wrongFirst ? q.ans + 1 : q.ans);
+        if (q.rem !== null) {
+            await page.locator('.action-submit').click();
+            await type(q.rem);
+        }
         await page.locator('.action-submit').click();
         await page.waitForTimeout(i < wrongFirst ? 1700 : 800);
     }
@@ -400,6 +404,20 @@ async function main() {
         await parent.locator('#view-home').waitFor({ state: 'visible' });
         await mode(parent, 'admin');
         expect((await parent.locator('#console-title').innerText()).includes('Admin'), 'az admin fül címe');
+
+        // A tanári funkciók alapból ki vannak kapcsolva: tanárt meghívni és osztályt létrehozni sem lehet (az admin sem)
+        expect(!(await parent.locator('#teachers-enabled').isChecked()) && await parent.locator('#creator-class-row').isHidden(),
+            'kikapcsolt tanári funkcióknál is látszik a tanár meghívása');
+        const adminToken = await adultToken(parent);
+        const classOff = await rpc('create_group', adminToken, { p_name: 'Tiltott osztály', p_kind: 'class' });
+        const inviteOff = await rpc('admin_invite', adminToken, { p_email: 'tiltott@teszt.matek', p_families: false, p_classes: true });
+        expect(!classOff.ok && !inviteOff.ok, `kikapcsolva: osztály ${classOff.status}, tanár-meghívó ${inviteOff.status} (mindkettő tiltott)`);
+        const settingsByKid = await rest('GET', 'app_settings?select=teachers_enabled',
+            await kid.evaluate(() => JSON.parse(localStorage.getItem('szorzo-eszkoz-auth')).access_token));
+        expect(JSON.stringify(settingsByKid.data) === '[]', `a gyerek eszköze is látja a beállításokat: ${JSON.stringify(settingsByKid.data)}`);
+        await parent.locator('#teachers-enabled').check();
+        await parent.locator('#creator-class-row').waitFor({ state: 'visible', timeout: 10000 });
+
         await parent.fill('#creator-email', 'tanar@teszt.matek');
         await parent.locator('#creator-family').uncheck(); // csak tanár
         await parent.locator('#creator-class').check();
@@ -546,6 +564,12 @@ async function main() {
         const gone = await sql('test', `select (select count(*) from auth.users where email = 'tanar@teszt.matek') u,
             (select count(*) from public.groups where name = '3.b') g`);
         expect(+gone[0].u === 0 && +gone[0].g === 0, `a tanár után maradt: ${JSON.stringify(gone[0])}`);
+
+        // Visszakapcsolás: a tanár szerep és az osztály-létrehozás megint tiltott
+        await parent.locator('#teachers-enabled').uncheck();
+        await parent.locator('#creator-class-row').waitFor({ state: 'hidden', timeout: 10000 });
+        const classOffAgain = await rpc('create_group', await adultToken(parent), { p_name: 'Tiltott osztály', p_kind: 'class' });
+        expect(!classOffAgain.ok, 'kikapcsolás után is lehetett osztályt létrehozni');
         expect(!teacher.errors.length && !parent.errors.length, `JS hiba: ${[...teacher.errors, ...parent.errors].join(' | ')}`);
         await teacher.context().close();
     });
@@ -692,6 +716,53 @@ async function main() {
         expect(+after[0].u === 0 && +after[0].tagok === 1, `törlés után: ${JSON.stringify(after[0])} (0 fiók, 1 tag kell)`);
         expect(!other.errors.length, `JS hiba: ${other.errors.join(' | ')}`);
         await other.context().close();
+    });
+
+    await test('Új feladattípusok és mai gyakorlás: feltöltés, utolsó válasz ideje, szülői térkép', async (expect) => {
+        await kid.reload();
+        await kid.locator('#child-chip').waitFor({ state: 'visible', timeout: 20000 });
+        // az előző teszt "Csillag mindenkinek" ajándéka most ugrik fel ezen a tableten
+        await kid.locator('#star-overlay').waitFor({ state: 'visible', timeout: 15000 })
+            .then(() => kid.locator('#star-overlay .btn-start').click()).catch(() => {});
+        const petike = await childId('Petike');
+        const before = await sql('test', `select count(*) as n from public.answers where child_id = '${petike}'`);
+        await kid.locator('#table-picker .btn-op[data-op="mis"]').click();
+        await playExam(kid, 7); // ? × 7 = …: 11 feladat
+        await kid.locator('#table-picker .btn-op[data-op="rem"]').click();
+        await playExam(kid, 3); // … : 3 = …, maradék …: 27 feladat
+        await kid.locator('#daily-btn').click();
+        expect((await kid.evaluate(() => quizDeck.length)) === 10, 'a mai gyakorlás nem 10 feladat');
+        await answerUntilResults(kid);
+        await kid.waitForFunction(() => {
+            const box = JSON.parse(localStorage.getItem('szorzo_outbox') || '{"answers":[1]}');
+            return !box.answers.length && !box.sessions.length;
+        }, null, { timeout: 20000 });
+        const counts = await sql('test', `select (select count(*) from public.answers where child_id = '${petike}' and op = 'mis') mis,
+            (select count(*) from public.answers where child_id = '${petike}' and op = 'rem') rem,
+            (select count(*) from public.answers where child_id = '${petike}') total,
+            (select count(*) from public.quiz_sessions where child_id = '${petike}' and mode = 'daily') daily,
+            (select count(*) from public.quiz_sessions where child_id = '${petike}' and op in ('mis', 'rem')) typed`);
+        const c = counts[0];
+        expect(+c.mis >= 11 && +c.rem >= 27 && +c.total === +before[0].n + 48 && +c.daily === 1 && +c.typed === 2,
+            `a felhőben: ${JSON.stringify(c)} (11 hiányzó, 27 maradékos, +48 válasz, 1 mai, 2 új típusú teszt)`);
+        const kidToken = await kid.evaluate(() => JSON.parse(localStorage.getItem('szorzo-eszkoz-auth')).access_token);
+        const facts = await rpc('child_facts', kidToken, { p_child_id: petike });
+        expect(facts.ok && facts.data.length && facts.data.every((f) => f.last_at), 'a child_facts nem adja az utolsó válasz idejét');
+        const local = await kid.evaluate(() => Object.values(JSON.parse(localStorage.getItem('szorzo_facts'))).every((f) => f.t > 0));
+        expect(local, 'a letöltött feladatoknál nincs meg az utolsó válasz ideje');
+
+        // A szülő térképén is látszik
+        await mode(parent, 'family');
+        await parent.locator('.child-btn', { hasText: 'Petike' }).first().click();
+        await parent.locator('#view-child').waitFor({ state: 'visible' });
+        const colored = () => parent.locator('#child-heatmap .hm-cell:not(.hm-none):not(.hm-head)').count();
+        await parent.locator('#view-child .op-toggle button', { hasText: 'Hiányzó' }).click();
+        const misColored = await colored();
+        await parent.locator('#view-child .op-toggle button', { hasText: 'Maradékos' }).click();
+        const remColored = await colored();
+        expect(misColored >= 11 && remColored >= 9, `a szülő térképén: hiányzó ${misColored} (legalább 11), maradékos ${remColored} (legalább 9: a 3-as sor) színes mező`);
+        await shot(parent, '9-uj-feladattipusok');
+        expect(!kid.errors.length && !parent.errors.length, `JS hiba: ${[...kid.errors, ...parent.errors].join(' | ')}`);
     });
 
     await browser.close();

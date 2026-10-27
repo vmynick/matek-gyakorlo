@@ -69,35 +69,46 @@ async function test(name, fn) {
 
 // --- segédek a felülethez ---
 const tick = (page, ms = 2000) => page.clock.runFor(ms);
+// A képernyőn látható feladat és a megoldása (a kiírt számokból számolva)
 const question = (page) => page.evaluate(() => {
   const a = +document.getElementById('q-factor1').innerText, b = +document.getElementById('q-factor2').innerText;
   const op = document.getElementById('q-op').innerText.trim();
-  return { a, b, op, ans: op === ':' ? a / b : a * b };
+  const kind = document.getElementById('user-rem') ? 'rem'
+    : document.querySelector('#expression > :first-child').id === 'user-answer' ? 'mis' : op === ':' ? 'div' : 'mul';
+  const ans = kind === 'mul' ? a * b : kind === 'rem' ? Math.floor(a / b) : a / b;
+  return { a, b, op, kind, ans, rem: kind === 'rem' ? a % b : null };
 });
 const screen = (page) => page.evaluate(() => document.querySelector('.screen.active')?.id);
 const text = (page, id) => page.evaluate((id) => document.getElementById(id).innerText.trim(), id);
 async function pickTables(page, list) { for (const i of list) await page.locator('#tables-grid button').nth(i).click(); }
 async function typeOnPad(page, n) { for (const d of String(n)) await page.getByRole('button', { name: d, exact: true }).click(); }
-async function answer(page, value, okTaps = 1) {
+// rem: maradékos osztásnál a maradék (az első OK a maradék mezőjére visz)
+async function answer(page, value, okTaps = 1, rem = null) {
   await typeOnPad(page, value);
+  if (rem !== null) { await page.locator('.action-submit').click(); await typeOnPad(page, rem); }
   for (let i = 0; i < okTaps; i++) await page.locator('.action-submit').click();
 }
 async function start(page) { await page.locator('#screen-setup .btn-start').click(); }
-async function pickOp(page, name) { await page.locator('#table-picker .btn-op', { hasText: name }).click(); }
+async function pickOp(page, name) { await page.locator(`#table-picker .btn-op[data-op="${OPS[name]}"]`).click(); }
+const OPS = { 'Szorzás': 'mul', 'Osztás': 'div', 'Vegyes': 'mix', 'Hiányzó tényező': 'mis', 'Maradékos osztás': 'rem' };
 const facts = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('szorzo_facts') || '{}'));
+const explainOpen = (page) => page.locator('#explain').isVisible();
 
-// Végigjátssza a tesztet; plan(index, q) -> 'ok' | 'wrong' | 'wrong-then-ok' | 'wrong-wrong'
+// Végigjátssza a tesztet; plan(index, q) -> 'ok' | 'wrong' | 'wrong-then-ok' | 'wrong-wrong' | 'slow-ok'
+// Végleges hiba után (gyakorló módban) a levezetésből a "Tovább" gombbal lép tovább.
 async function playQuiz(page, plan = () => 'ok', okTaps = 1) {
   const seen = [];
   for (let guard = 0; guard < 200 && (await screen(page)) === 'screen-quiz'; guard++) {
     const q = await question(page);
     seen.push(`${q.a}${q.op}${q.b}`);
     const step = plan(seen.length - 1, q);
-    if (step === 'wrong-then-ok') { await answer(page, q.ans + 1); await answer(page, q.ans, okTaps); }
-    else if (step === 'wrong-wrong') { await answer(page, q.ans + 1); await answer(page, q.ans + 2, okTaps); }
-    else if (step === 'slow-ok') { await tick(page, 7000); await answer(page, q.ans, okTaps); }
-    else await answer(page, step === 'wrong' ? q.ans + 1 : q.ans, okTaps);
+    const say = (v, taps = okTaps) => answer(page, v, taps, q.rem);
+    if (step === 'wrong-then-ok') { await say(q.ans + 1, 1); await say(q.ans); }
+    else if (step === 'wrong-wrong') { await say(q.ans + 1, 1); await say(q.ans + 2); }
+    else if (step === 'slow-ok') { await tick(page, 7000); await say(q.ans); }
+    else await say(step === 'wrong' ? q.ans + 1 : q.ans);
     await tick(page);
+    if (await explainOpen(page)) await page.locator('#explain-next').click();
   }
   return seen;
 }
@@ -426,6 +437,170 @@ async function main() {
     return page;
   });
 
+  await test('Mai gyakorlás: új gyereknek a 2-es tábla, másnap a hibák, az ismétlések és új feladatok', async (expect) => {
+    const page = await newPage();
+    const info = await text(page, 'daily-info');
+    expect(info.includes('✨ 10 új') && !info.includes('javítás'), `kártya új gyereknek: ${info}`);
+    await page.locator('#daily-btn').click();
+    const first = await page.evaluate(() => quizDeck.map(factKey));
+    expect(first.length === 10 && first.every((k) => k.startsWith('mul:2:')), `első nap: ${first.join(' ')} (10 feladat a 2-es táblából)`);
+    expect(await page.locator('#bone-badge').isVisible(), 'a mai gyakorlásban is jár csont');
+    await playQuiz(page, (i) => (i < 4 ? 'wrong' : 'ok')); // 3 csont, a 4. végleges hiba
+    expect((await text(page, 'res-mode-badge')) === 'Mai Gyakorlás', `mód címke: ${await text(page, 'res-mode-badge')}`);
+    const hist = await page.evaluate(() => JSON.parse(localStorage.getItem('szorzo_history')));
+    expect(hist.length === 1 && hist[0].mode === 'daily', `előzmény: ${JSON.stringify(hist)}`);
+    await page.locator('#screen-results .btn-start').click();
+    expect((await text(page, 'daily-title')).includes('megvan') && (await text(page, 'daily-btn')).includes('Még egy'),
+      `a kártya a gyakorlás után: ${await text(page, 'daily-title')}`);
+
+    // Másnap: a hibás elöl, aztán az esedékes ismétlések és új feladatok
+    const f = await facts(page);
+    const weak = Object.keys(f).filter((k) => /[bx]/.test(f[k].r));
+    await page.clock.fastForward('24:00:00');
+    await page.locator('.tab-btn').first().click();
+    const info2 = await text(page, 'daily-info');
+    expect(info2.includes(`🎯 ${weak.length} javítás`) && info2.includes('🔁') && info2.includes('✨ 3 új'), `másnap: ${info2}`);
+    await page.locator('#daily-btn').click();
+    const second = await page.evaluate(() => quizDeck.map(factKey));
+    const fresh = second.filter((k) => !f[k]);
+    expect(weak.every((k) => second.includes(k)), `a hibás feladatok (${weak.join(' ')}) nincsenek benne: ${second.join(' ')}`);
+    expect(second.length === 10 && fresh.length === 3, `másnap: ${second.join(' ')} (10 feladat, ebből 3 új)`);
+    expect(fresh.includes('mul:2:' + [...Array(11).keys()].find((o) => !f[`mul:2:${o}`])),
+      `a 2-es tábla kimaradt feladata nincs az újak között: ${fresh.join(' ')}`);
+
+    // Ismétlés: 1, 2, 4, 7, 14 nap után; a lassú legfeljebb 2 naponta
+    const due = await page.evaluate(() => {
+      const now = Date.now(), day = 86400000;
+      const fact = (r, daysAgo, ms = [2000]) => ({ n: r.length, ok: 0, bone: 0, bad: 0, r, ms, t: now - daysAgo * day });
+      return [reviewDue(fact('o', 1), now), reviewDue(fact('oo', 1), now), reviewDue(fact('oo', 2), now),
+        reviewDue(fact('ooooo', 7), now), reviewDue(fact('ooooo', 14), now), reviewDue(fact('ooooo', 2, [7000]), now)];
+    });
+    expect(JSON.stringify(due) === '[1,0.5,1,0.5,1,1]', `esedékesség: ${JSON.stringify(due)} ([1,0.5,1,0.5,1,1] kell)`);
+    return page;
+  });
+
+  await test('Hiányzó tényező: ? × 7 = 56, a mező elöl, kikérdezve és a térképen', async (expect) => {
+    const page = await newPage();
+    await page.locator('#mode-exam').click();
+    await pickOp(page, 'Hiányzó tényező');
+    await pickTables(page, [7]);
+    expect((await text(page, 'exam-task-info')).includes('11 feladat'), `info: ${await text(page, 'exam-task-info')}`);
+    await start(page);
+    const shown = await page.evaluate(() => document.getElementById('expression').innerText.replace(/\s+/g, ' ').trim());
+    const q = await question(page);
+    expect(q.kind === 'mis' && q.b === 7 && q.a % 7 === 0 && shown === `× 7 = ${q.a}`, `a feladat: "${shown}"`);
+    const seen = await playQuiz(page);
+    expect(seen.length === 11 && new Set(seen).size === 11, `11 különböző feladat kell, volt: ${seen.length}`);
+    expect((await text(page, 'res-total')) === '11/11', `eredmény: ${await text(page, 'res-total')}`);
+    const keys = Object.keys(await facts(page));
+    expect(keys.length === 11 && keys.every((k) => k.startsWith('mis:7:')), `feladatok: ${keys.join(' ')}`);
+    await page.locator('.tab-btn').nth(1).click();
+    await tick(page, 1500);
+    await page.locator('#hm-ops .btn-op', { hasText: 'Hiányzó' }).click();
+    const cells = await page.locator('#heatmap .hm-cell').count();
+    const colored = await page.locator('#heatmap .hm-cell:not(.hm-none):not(.hm-head)').count();
+    expect(cells === 132 && colored === 11, `térkép: ${cells} mező, ${colored} színes (132 és 11 kell)`);
+    await page.locator('#heatmap .hm-cell[title^="? × 7 = 56"]').click();
+    expect((await text(page, 'hm-detail')).includes('? × 7 = 56 → 8'), `részletek: ${await text(page, 'hm-detail')}`);
+    return page;
+  });
+
+  await test('Maradékos osztás: két mező, célzott tipp, levezetés, térkép', async (expect) => {
+    const page = await newPage();
+    await pickOp(page, 'Maradékos osztás');
+    expect((await text(page, 'tables-label')).includes('osztókat'), `felirat: ${await text(page, 'tables-label')}`);
+    await pickTables(page, [7]);
+    await page.locator('.btn-count', { hasText: '10 db' }).click();
+    await start(page);
+    const q = await question(page);
+    expect(q.kind === 'rem' && q.b === 7 && q.a >= 7 && q.a < 70, `a feladat: ${q.a} : ${q.b}`);
+    // Az első OK a maradék mezőjére visz; az üres maradékból a ⌫ vissza
+    await typeOnPad(page, q.ans);
+    await page.locator('.action-submit').click();
+    const active = () => page.evaluate(() => document.querySelector('.answer-display.active')?.id);
+    expect((await active()) === 'user-rem', `aktív mező az OK után: ${await active()}`);
+    await page.locator('#screen-quiz .action-del').click();
+    expect((await active()) === 'user-answer', `aktív mező a ⌫ után: ${await active()}`);
+    await page.locator('#user-rem').click();
+    // A maradék nem lehet nagyobb az osztónál: célzott tipp
+    await typeOnPad(page, 9);
+    await page.locator('.action-submit').click();
+    expect((await text(page, 'hint')).includes('kisebb, mint az osztó (7)'), `tipp: ${await text(page, 'hint')}`);
+    await answer(page, q.ans, 1, q.rem);
+    await tick(page);
+    // Rossz hányados: tipp a szomszédos szorzatokkal, aztán a levezetés pöttyökkel
+    const q2 = await question(page);
+    await answer(page, q2.ans + 1, 1, q2.rem);
+    expect((await text(page, 'hint')).includes(`${q2.ans * 7}`), `tipp: ${await text(page, 'hint')}`);
+    await answer(page, q2.ans + 2, 1, q2.rem);
+    expect(await explainOpen(page) && !(await page.locator('#numpad').isVisible()), 'végleges hiba után nem a levezetés látszik');
+    expect((await text(page, 'explain-text')).includes(`= ${q2.ans}, maradék ${q2.rem}`), `levezetés: ${await text(page, 'explain-text')}`);
+    const dots = await page.evaluate(() => ({ a: document.querySelectorAll('#explain-dots i.a').length,
+      rest: document.querySelectorAll('#explain-dots i.rest').length }));
+    expect(dots.a === q2.ans * 7 && dots.rest === q2.rem, `pöttyök: ${JSON.stringify(dots)}`);
+    await tick(page);
+    await page.locator('#explain-next').click();
+    await playQuiz(page);
+    expect((await text(page, 'res-total')) === '9/10', `eredmény: ${await text(page, 'res-total')} (9/10 kell)`);
+    expect((await page.locator('#res-mistakes-list').innerText()).includes('maradék'), 'a hibalistában nincs ott a maradék');
+    const keys = Object.keys(await facts(page));
+    expect(keys.length === 10 && keys.every((k) => /^rem:7:\d+$/.test(k) && +k.split(':')[2] >= 7 && +k.split(':')[2] < 70),
+      `feladatok: ${keys.join(' ')}`);
+    await page.locator('.tab-btn').nth(1).click();
+    await tick(page, 1500);
+    await page.locator('#hm-ops .btn-op', { hasText: 'Maradékos' }).click();
+    const cells = await page.locator('#heatmap .hm-cell').count();
+    expect(cells === 110, `maradékos térkép: ${cells} mező (110 kell: 10 osztó és 9 hányados, fejléccel)`);
+    await page.locator('#heatmap .hm-cell:not(.hm-none):not(.hm-head)').first().click();
+    expect((await text(page, 'hm-detail')).includes('válasz'), `részletek: ${await text(page, 'hm-detail')}`);
+    return page;
+  });
+
+  await test('Segítség: tipp csontnál, levezetés pöttyökkel; minden feladatra helyes számolás', async (expect) => {
+    const page = await newPage();
+    await pickTables(page, [9]);
+    await page.locator('.btn-count', { hasText: '10 db' }).click();
+    await start(page);
+    const q = await question(page);
+    await answer(page, q.ans + 1);
+    const hint = await text(page, 'hint');
+    expect(hint.startsWith('💡') && (q.ans <= 10 || !new RegExp(`(^|\\D)${q.ans}(\\D|$)`).test(hint)), `tipp (${q.a} × 9): ${hint}`);
+    await answer(page, q.ans + 2);
+    expect(await explainOpen(page), 'végleges hiba után nincs levezetés');
+    const dots = await page.locator('#explain-dots i:not(.ghost)').count();
+    expect(dots === q.ans, `pöttyök: ${dots} (${q.ans} kell)`);
+    await page.locator('#explain-next').click(); // dupla koppintás: még nem lép tovább
+    expect(await explainOpen(page), 'azonnali koppintásra átugrotta a levezetést');
+    await tick(page, 600);
+    await page.keyboard.press('Enter');
+    expect(!(await explainOpen(page)) && (await page.locator('#numpad').isVisible())
+      && (await page.evaluate(() => currentQuestionIndex)) === 1, 'Enterre nem ment tovább a következő feladatra');
+
+    // Minden feladat levezetése: a láncban minden tag ugyanannyi, a pöttyök száma is egyezik, a tipp nem árulja el
+    const bad = await page.evaluate(() => {
+      const out = [];
+      const value = (s) => Function(`return (${s.replace(/×/g, '*').replace(/−/g, '-').replace(/ : /g, '/').replace(/^(.*) fele$/, '($1)/2')})`)();
+      const all = [];
+      for (const [op, lo] of [['mul', 0], ['div', 1], ['mis', 1]]) for (let t = lo; t <= 10; t++) for (let o = 0; o <= 10; o++) all.push(makeQuestion(op, t, o));
+      for (let t = 1; t <= 10; t++) for (let n = t; n < 10 * t; n++) all.push(makeQuestion('rem', t, n));
+      for (const q of all) {
+        const { text, rows } = explainFor(q);
+        const dots = rows.filter((r) => r.kind !== 'ghost').reduce((s, r) => s + r.n, 0);
+        if (dots !== (q.op === 'mul' ? q.target : q.f1)) out.push(`${solutionText(q)}: ${dots} pötty`);
+        if (q.op === 'mul' && text.split(' = ').some((s) => value(s) !== q.target)) out.push(`hibás levezetés: ${text}`);
+        if (q.op !== 'mul' && !text.includes(q.op === 'rem' ? `= ${q.target}, maradék ${q.rem},` : `${q.other} × ${q.table} = ${q.f1}`)) {
+          out.push(`hibás levezetés: ${text}`);
+        }
+        const tip = hintFor(q, {});
+        if (!tip || tip.includes('undefined') || tip.includes('NaN')) out.push(`hibás tipp: ${solutionText(q)}: ${tip}`);
+        if (q.op === 'mul' && q.target > 10 && new RegExp(`(^|\\D)${q.target}(\\D|$)`).test(tip)) out.push(`a tipp elárulja: ${solutionText(q)}: ${tip}`);
+      }
+      return { count: all.length, out };
+    });
+    expect(bad.count === 121 + 110 + 110 + 495 && !bad.out.length, `${bad.count} feladat, hibák: ${bad.out.slice(0, 5).join(' | ')}`);
+    return page;
+  });
+
   await test('Verziószám és a link megosztása', async (expect) => {
     const page = await newPage();
     const appUrl = 'https://vmynick.github.io/matek-gyakorlo/';
@@ -538,8 +713,13 @@ async function main() {
       const padBottom = await page.evaluate(() => document.querySelector('.numpad').getBoundingClientRect().bottom);
       expect(padBottom <= vp.height, `a számbillentyűzet alja nem fér ki görgetés nélkül (${Math.round(padBottom)} > ${vp.height})`);
       if (shotsDir) await page.screenshot({ path: path.join(shotsDir, `${vp.n}-2-feladat.png`) });
-      await answer(page, q.ans);
+      await answer(page, q.ans + 2); // végleges hiba: a levezetés a számbillentyűzet helyén
+      const nextBottom = await page.evaluate(() => Math.round(document.getElementById('explain-next').getBoundingClientRect().bottom));
+      expect(nextBottom <= vp.height, `a levezetés "Tovább" gombja nem fér ki görgetés nélkül (${nextBottom} > ${vp.height})`);
+      expect(await noHScroll(), 'vízszintes görgetősáv a levezetésnél');
+      if (shotsDir) await page.screenshot({ path: path.join(shotsDir, `${vp.n}-2b-levezetes.png`) });
       await tick(page);
+      await page.locator('#explain-next').click();
       await playQuiz(page, (i) => (i % 3 === 0 ? 'wrong' : 'ok'));
       if (shotsDir) await page.screenshot({ path: path.join(shotsDir, `${vp.n}-3-eredmeny.png`), fullPage: true });
       await page.locator('.tab-btn').nth(1).click();
@@ -558,6 +738,17 @@ async function main() {
       expect(fit.cell >= 17, `túl kicsik a térkép mezői: ${fit.cell}px`);
       expect(fit.detailSh <= fit.detailCh + 1, `a mező részletei kilógnak (${fit.detailSh} > ${fit.detailCh}px)`);
       if (shotsDir) await page.screenshot({ path: path.join(shotsDir, `${vp.n}-4-statisztika.png`) });
+
+      // Maradékos osztás: két mező és a tipp mellett is kifér a számbillentyűzet
+      await page.locator('.tab-btn').first().click();
+      await pickOp(page, 'Maradékos osztás');
+      await start(page);
+      const rq = await question(page);
+      await answer(page, rq.ans + 1, 1, rq.rem);
+      const remPad = await page.evaluate(() => Math.round(document.querySelector('.numpad').getBoundingClientRect().bottom));
+      expect(remPad <= vp.height, `maradékos osztásnál a számbillentyűzet alja nem fér ki (${remPad} > ${vp.height})`);
+      expect(await noHScroll(), 'vízszintes görgetősáv a maradékos osztásnál');
+      if (shotsDir) await page.screenshot({ path: path.join(shotsDir, `${vp.n}-5-maradekos.png`) });
       return page;
     });
   }
