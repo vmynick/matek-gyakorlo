@@ -185,7 +185,7 @@
             grid-column: 1 / -1;
         }
 
-        /* Művelet választó (szorzás / osztás / vegyes / hiányzó tényező / maradékos osztás) */
+        /* Művelet választó (szorzás / osztás / hiányzó tényező / maradékos osztás; több is választható) */
         .op-selector {
             display: flex;
             flex-wrap: wrap;
@@ -194,11 +194,13 @@
         }
 
         #table-picker .btn-op {
-            flex: 1 1 28%;
+            flex: 1 1 40%;
         }
 
-        #table-picker .btn-op.op-wide {
-            flex-basis: 40%;
+        .section-hint {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-muted);
         }
 
         .mode-card h3 {
@@ -1229,13 +1231,12 @@
 
         <div id="table-picker">
             <!-- Művelet választás -->
-            <div class="section-label">Művelet:</div>
+            <div class="section-label">Művelet: <span class="section-hint">több is választható</span></div>
             <div class="op-selector">
-                <button class="btn-op selected" data-op="mul" onclick="setOp('mul', this)"><b>×</b> Szorzás</button>
-                <button class="btn-op" data-op="div" onclick="setOp('div', this)">➗ Osztás</button>
-                <button class="btn-op" data-op="mix" onclick="setOp('mix', this)">🔀 Vegyes</button>
-                <button class="btn-op op-wide" data-op="mis" onclick="setOp('mis', this)">🔍 Hiányzó tényező</button>
-                <button class="btn-op op-wide" data-op="rem" onclick="setOp('rem', this)">🍬 Maradékos osztás</button>
+                <button class="btn-op selected" data-op="mul" onclick="toggleOp('mul')"><b>×</b> Szorzás</button>
+                <button class="btn-op" data-op="div" onclick="toggleOp('div')">➗ Osztás</button>
+                <button class="btn-op" data-op="mis" onclick="toggleOp('mis')">🔍 Hiányzó tényező</button>
+                <button class="btn-op" data-op="rem" onclick="toggleOp('rem')">🍬 Maradékos osztás</button>
             </div>
 
             <!-- Tábla Kiválasztó (0-10) -->
@@ -1494,7 +1495,7 @@
     /* --- ALAPAPPLIKÁCIÓ ÁLLAPOT --- */
     let selectedTables = []; // Egyik sincs kijelölve az elején
     let currentMode = 'practice'; // 'practice', 'exam' vagy 'weak' (hibák gyakorlása)
-    let currentOp = 'mul'; // 'mul' (szorzás), 'div' (osztás), 'mix' (vegyes), 'mis' (hiányzó tényező), 'rem' (maradékos)
+    let currentOps = ['mul']; // a választott műveletek: 'mul' (szorzás), 'div' (osztás), 'mis' (hiányzó tényező), 'rem' (maradékos)
     let heatmapOp = 'mul'; // a feladat-térképen mutatott művelet
     let questionCountSetting = 20; // 10, 20, 30, vagy 'all'
     let soundEnabled = true; // Hangok állapota
@@ -1681,18 +1682,20 @@
         document.getElementById('weak-settings').style.display = mode === 'weak' ? 'block' : 'none';
     }
 
-    function setOp(op, btn) {
+    // A műveletgombok kapcsolók: bármelyikek együtt is mehetnek, de az utolsót nem lehet kikapcsolni
+    function toggleOp(op) {
+        if (currentOps.includes(op) && currentOps.length === 1) return;
         playSound('click');
-        currentOp = op;
-        selectInGroup(btn);
-        document.getElementById('tables-label').innerText = op === 'rem' ? 'Válaszd ki az osztókat:' : 'Válaszd ki a táblákat:';
-        updateSetupInfo();
+        selectOps(currentOps.includes(op) ? currentOps.filter(o => o !== op) : [...currentOps, op]);
     }
 
-    // A művelet kiválasztása a neve alapján (kiosztott feladatnál, frissítés után)
-    function selectOp(op) {
-        const btn = document.querySelector(`#table-picker .btn-op[data-op="${op}"]`);
-        if (btn) setOp(op, btn);
+    // A műveletek beállítása (kattintás, kiosztott feladat, frissítés után)
+    function selectOps(ops) {
+        if (!ops.length) return;
+        currentOps = parseOps(joinOps(ops));
+        document.querySelectorAll('#table-picker .btn-op').forEach(b => b.classList.toggle('selected', currentOps.includes(b.dataset.op)));
+        document.getElementById('tables-label').innerText = currentOps.join() === 'rem' ? 'Válaszd ki az osztókat:' : 'Válaszd ki a táblákat:';
+        updateSetupInfo();
     }
 
     // Egy gombcsoportban csak a megnyomott gomb legyen kijelölve
@@ -1710,7 +1713,7 @@
     }
 
     function updateSetupInfo() {
-        const count = buildDeck(selectedTables, currentOp).length;
+        const count = buildDeck(selectedTables, currentOps).length;
         document.getElementById('exam-task-info').innerText =
             `ℹ️ A Kikérdező módban a kiválasztott ${selectedTables.length} db táblából pontosan ${count} feladat lesz kikérdezve.`;
 
@@ -1750,22 +1753,27 @@
     // A feladat felépítése (makeQuestion), a feladatonkénti statisztika számítása és a térkép / grafikon
     // kirajzolása a közös stats.js-ben van (a szülői felület is azt használja).
 
-    function buildDeck(tables, op) {
+    function buildDeck(tables, ops) {
         const deck = [];
-        tables.forEach(t => {
-            if (t === 0 && op !== 'mul' && op !== 'mix') return; // 0-val nem osztunk
+        tables.forEach(t => ops.forEach(op => {
+            if (t === 0 && op !== 'mul') return; // 0-val nem osztunk
             if (op === 'rem') {
                 // maradékos osztás a 100-as körben: hányados 1–9, minden lehetséges maradékkal
                 for (let n = t; n < (REM_MAX_QUOTIENT + 1) * t; n++) deck.push(makeQuestion('rem', t, n));
                 return;
             }
-            for (let i = 0; i <= 10; i++) {
-                if (op === 'mul' || op === 'mix') deck.push(makeQuestion('mul', t, i));
-                if ((op === 'div' || op === 'mix') && t > 0) deck.push(makeQuestion('div', t, i));
-                if (op === 'mis') deck.push(makeQuestion('mis', t, i));
-            }
-        });
+            for (let i = 0; i <= 10; i++) deck.push(makeQuestion(op, t, i));
+        }));
         return deck;
+    }
+
+    // Több műveletnél felváltva jönnek, így kevesebb feladatnál is mindegyikből ugyanannyi jut
+    // (a maradékos osztásból egy táblán sokkal több feladat van, mint a többiből)
+    function alternateOps(deck) {
+        const groups = shuffle(OP_ORDER.map(op => shuffle(deck.filter(q => q.op === op))).filter(g => g.length));
+        const out = [];
+        for (let i = 0; out.length < deck.length; i++) groups.forEach(g => { if (i < g.length) out.push(g[i]); });
+        return out;
     }
 
     // Véletlenszerű keverés (Fisher-Yates)
@@ -1836,7 +1844,7 @@
         const inNext = [];
         (ops.length ? ops : ['mul']).forEach(op => {
             const used = new Set(keys.filter(k => k.startsWith(`${op}:`)).map(k => +k.split(':')[1]));
-            const unseen = t => buildDeck([t], op).filter(q => !facts[factKey(q)]);
+            const unseen = t => buildDeck([t], [op]).filter(q => !facts[factKey(q)]);
             used.forEach(t => inUsed.push(...unseen(t)));
             const next = TABLE_ORDER.find(t => !used.has(t) && unseen(t).length);
             if (next !== undefined) inNext.push(...unseen(next));
@@ -1916,7 +1924,7 @@
                 alert('Kérlek, válassz ki legalább egy táblát!');
                 return;
             }
-            fullDeck = shuffle(buildDeck(selectedTables, currentOp));
+            fullDeck = alternateOps(buildDeck(selectedTables, currentOps));
             if (fullDeck.length === 0) {
                 alert('0-val nem lehet osztani. Válassz másik táblát is!');
                 return;
@@ -2231,7 +2239,7 @@
         const session = {
             id: currentSessionId,
             mode: quizMode,
-            op: picked ? currentOp : null,
+            op: picked ? joinOps(currentOps) : null,
             tables: picked ? selectedTables : [],
             total: totalTasks,
             correct: score,
@@ -2467,7 +2475,7 @@
             reloading = true;
             try {
                 sessionStorage.setItem('szorzo_updated', JSON.stringify({
-                    tables: selectedTables, op: currentOp, mode: currentMode, count: questionCountSetting,
+                    tables: selectedTables, op: joinOps(currentOps), mode: currentMode, count: questionCountSetting,
                 }));
             } catch (e) { /* a beállítások nélkül is frissül */ }
             location.reload();
@@ -2515,7 +2523,7 @@
 
         selectedTables = Array.isArray(saved.tables) ? saved.tables : [];
         renderTableSelector();
-        selectOp(saved.op);
+        selectOps(parseOps(saved.op));
         const countIndex = [10, 20, 30, 'all'].indexOf(saved.count);
         if (countIndex >= 0) setCount(saved.count, document.querySelectorAll('.btn-count')[countIndex]);
         if (['practice', 'exam', 'weak'].includes(saved.mode)) setMode(saved.mode);
@@ -2532,7 +2540,7 @@
     }
 
     /* --- VERZIÓ ÉS MEGOSZTÁS --- */
-    const APP_VERSION = '1.8';
+    const APP_VERSION = '1.9';
     const APP_BUILD = 'dev'; // a közzététel (GitHub Actions) írja át a commit rövid azonosítójára
     const APP_URL = 'https://vmynick.github.io/matek-gyakorlo/';
 
@@ -2780,7 +2788,7 @@
             const title = document.createElement('strong');
             title.textContent = `📌 Feladat: ${a.tables.map(t => `${t}-${TABLE_SUFFIX[t]}`).join(', ')} tábla`;
             const details = document.createElement('span');
-            details.textContent = `${OP_NAMES[a.op]} · ${a.mode === 'exam' ? 'kikérdező, az összes' : (a.question_count ? `${a.question_count} db` : 'az összes')}`;
+            details.textContent = `${opsName(a.op)} · ${a.mode === 'exam' ? 'kikérdező, az összes' : (a.question_count ? `${a.question_count} db` : 'az összes')}`;
             text.append(title, details);
             if (a.due_date) {
                 const due = document.createElement('span');
@@ -2859,7 +2867,7 @@
     function startAssignment(a) {
         selectedTables = [...a.tables];
         renderTableSelector();
-        selectOp(a.op);
+        selectOps(parseOps(a.op));
         setMode(a.mode === 'exam' ? 'exam' : 'practice');
         questionCountSetting = a.question_count || 'all';
         document.querySelectorAll('.btn-count').forEach(b => b.classList.remove('selected'));

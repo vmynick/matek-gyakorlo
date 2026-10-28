@@ -89,8 +89,19 @@ async function answer(page, value, okTaps = 1, rem = null) {
   for (let i = 0; i < okTaps; i++) await page.locator('.action-submit').click();
 }
 async function start(page) { await page.locator('#screen-setup .btn-start').click(); }
-async function pickOp(page, name) { await page.locator(`#table-picker .btn-op[data-op="${OPS[name]}"]`).click(); }
-const OPS = { 'Szorzás': 'mul', 'Osztás': 'div', 'Vegyes': 'mix', 'Hiányzó tényező': 'mis', 'Maradékos osztás': 'rem' };
+// Pontosan ezek a műveletek legyenek kijelölve: a gombok kapcsolók, és az utolsót nem lehet kikapcsolni,
+// ezért előbb a kellőket kapcsolja be, aztán a többit ki
+async function pickOps(page, ...names) {
+  const want = names.map((n) => OPS[n]);
+  for (const on of [true, false]) {
+    for (const op of Object.values(OPS)) {
+      const btn = page.locator(`#table-picker .btn-op[data-op="${op}"]`);
+      const selected = await btn.evaluate((b) => b.classList.contains('selected'));
+      if (want.includes(op) === on && selected !== on) await btn.click();
+    }
+  }
+}
+const OPS = { 'Szorzás': 'mul', 'Osztás': 'div', 'Hiányzó tényező': 'mis', 'Maradékos osztás': 'rem' };
 const facts = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('szorzo_facts') || '{}'));
 const explainOpen = (page) => page.locator('#explain').isVisible();
 
@@ -326,7 +337,7 @@ async function main() {
   await test('Osztás (bennfoglalás): 7-es tábla kikérdezve', async (expect) => {
     const page = await newPage();
     await page.locator('#mode-exam').click();
-    await pickOp(page, 'Osztás');
+    await pickOps(page, 'Osztás');
     await pickTables(page, [7]);
     expect((await text(page, 'exam-task-info')).includes('11 feladat'), `info: ${await text(page, 'exam-task-info')}`);
     await start(page);
@@ -340,7 +351,7 @@ async function main() {
 
   await test('Osztás csak a 0-s táblával nem indul (0-val nem osztunk)', async (expect) => {
     const page = await newPage();
-    await pickOp(page, 'Osztás');
+    await pickOps(page, 'Osztás');
     await pickTables(page, [0]);
     await start(page);
     expect((await screen(page)) === 'screen-setup', 'elindult a teszt');
@@ -348,16 +359,45 @@ async function main() {
     return page;
   });
 
-  await test('Vegyes: 2-es tábla = 11 szorzás + 11 osztás', async (expect) => {
+  await test('Több művelet: 2-es tábla szorzás + osztás = 11 + 11, az utolsó művelet nem kapcsolható ki', async (expect) => {
     const page = await newPage();
+    const selectedOps = () => page.evaluate(() =>
+      [...document.querySelectorAll('#table-picker .btn-op.selected')].map((b) => b.dataset.op).join());
+    await page.locator('#table-picker .btn-op[data-op="mul"]').click(); // az egyetlen kijelölt: marad
+    expect((await selectedOps()) === 'mul', `az utolsó művelet kikapcsolható volt: "${await selectedOps()}"`);
     await page.locator('#mode-exam').click();
-    await pickOp(page, 'Vegyes');
+    await pickOps(page, 'Szorzás', 'Osztás');
+    expect((await selectedOps()) === 'mul,div', `kijelölve: ${await selectedOps()}`);
     await pickTables(page, [2]);
     expect((await text(page, 'exam-task-info')).includes('22 feladat'), `info: ${await text(page, 'exam-task-info')}`);
     await start(page);
     const seen = await playQuiz(page);
     const mul = seen.filter((s) => s.includes('×')).length, div = seen.filter((s) => s.includes(':')).length;
     expect(mul === 11 && div === 11 && new Set(seen).size === 22, `szorzás: ${mul}, osztás: ${div}, különböző: ${new Set(seen).size}`);
+    return page;
+  });
+
+  await test('Több művelet, kevés feladat: mindegyikből ugyanannyi jut (a maradékosból sokkal több van)', async (expect) => {
+    const page = await newPage();
+    await pickOps(page, 'Szorzás', 'Hiányzó tényező', 'Maradékos osztás');
+    expect((await text(page, 'tables-label')).includes('táblákat'), `felirat: ${await text(page, 'tables-label')}`);
+    await pickTables(page, [9]);
+    await page.locator('.btn-count', { hasText: '30 db' }).click();
+    const counts = await page.evaluate(() => {
+      const out = [];
+      for (let i = 0; i < 20; i++) {
+        startQuiz();
+        const c = { mul: 0, mis: 0, rem: 0 };
+        quizDeck.forEach((q) => c[q.op]++);
+        out.push(`${c.mul}/${c.mis}/${c.rem}`);
+      }
+      return [...new Set(out)];
+    });
+    expect(counts.join() === '10/10/10', `szorzás/hiányzó/maradékos megoszlás: ${counts.join(' ')} (10/10/10 kell)`);
+    await playQuiz(page); // az utoljára indított teszt
+    const keys = Object.keys(await facts(page));
+    const ops = [...new Set(keys.map((k) => k.split(':')[0]))].sort().join();
+    expect((await text(page, 'res-total')) === '30/30' && ops === 'mis,mul,rem', `eredmény: ${await text(page, 'res-total')}, műveletek: ${ops}`);
     return page;
   });
 
@@ -482,7 +522,7 @@ async function main() {
   await test('Hiányzó tényező: ? × 7 = 56, a mező elöl, kikérdezve és a térképen', async (expect) => {
     const page = await newPage();
     await page.locator('#mode-exam').click();
-    await pickOp(page, 'Hiányzó tényező');
+    await pickOps(page, 'Hiányzó tényező');
     await pickTables(page, [7]);
     expect((await text(page, 'exam-task-info')).includes('11 feladat'), `info: ${await text(page, 'exam-task-info')}`);
     await start(page);
@@ -507,7 +547,7 @@ async function main() {
 
   await test('Maradékos osztás: két mező, célzott tipp, levezetés, térkép', async (expect) => {
     const page = await newPage();
-    await pickOp(page, 'Maradékos osztás');
+    await pickOps(page, 'Maradékos osztás');
     expect((await text(page, 'tables-label')).includes('osztókat'), `felirat: ${await text(page, 'tables-label')}`);
     await pickTables(page, [7]);
     await page.locator('.btn-count', { hasText: '10 db' }).click();
@@ -660,7 +700,7 @@ async function main() {
     const page = await newPage({ clock: false });
     await page.waitForFunction(() => navigator.serviceWorker.controller, null, { timeout: 10000 });
     await pickTables(page, [2]);
-    await pickOp(page, 'Osztás');
+    await pickOps(page, 'Szorzás', 'Osztás');
     await start(page);
     await page.evaluate(() => { window.regiOldal = true; });
 
@@ -678,8 +718,9 @@ async function main() {
     expect((await text(page, 'toast')).includes('frissült'), `üzenet: ${await text(page, 'toast')}`);
     const keys = await page.evaluate(() => caches.keys());
     expect(keys.includes('szorzotabla-uj-verzio') && !keys.includes('szorzotabla-dev'), `gyorsítótárak: ${keys.join(', ')}`);
-    const kept = await page.evaluate(() => ({ tables: selectedTables.join(), op: currentOp }));
-    expect(kept.tables === '2' && kept.op === 'div', `a beállítások nem maradtak meg: ${JSON.stringify(kept)}`);
+    const kept = await page.evaluate(() => ({ tables: selectedTables.join(), ops: currentOps.join(),
+      buttons: [...document.querySelectorAll('#table-picker .btn-op.selected')].map((b) => b.dataset.op).join() }));
+    expect(kept.tables === '2' && kept.ops === 'mul,div' && kept.buttons === 'mul,div', `a beállítások nem maradtak meg: ${JSON.stringify(kept)}`);
     swVersion = null;
     return page;
   });
@@ -694,6 +735,9 @@ async function main() {
       const page = await newPage({ viewport: { width: vp.width, height: vp.height } });
       const noHScroll = () => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
       expect(await noHScroll(), 'vízszintes görgetősáv a beállításoknál');
+      const opsFit = await page.evaluate(() => [...document.querySelectorAll('#table-picker .btn-op')]
+        .every((b) => b.scrollWidth <= b.clientWidth + 1));
+      expect(opsFit, 'a műveletgombok felirata kilóg');
       const head = await page.evaluate(() => {
         const r = (el) => el.getBoundingClientRect();
         const bar = r(document.querySelector('.tab-bar')), theme = r(document.getElementById('theme-btn'));
@@ -741,7 +785,7 @@ async function main() {
 
       // Maradékos osztás: két mező és a tipp mellett is kifér a számbillentyűzet
       await page.locator('.tab-btn').first().click();
-      await pickOp(page, 'Maradékos osztás');
+      await pickOps(page, 'Maradékos osztás');
       await start(page);
       const rq = await question(page);
       await answer(page, rq.ans + 1, 1, rq.rem);

@@ -10,8 +10,9 @@ Szorzótábla- és bennfoglalás-gyakorló web-app alsósoknak, tabletre és tel
 
 ## Mit tud?
 
-- **Szorzás, osztás (bennfoglalás) vagy vegyesen**, a 0–10-es táblákból. A szorzás a tankönyv szerinti sorrendben jelenik meg: a 4-es tábla 1 × 4, 2 × 4 … 10 × 4.
+- **Szorzás és osztás (bennfoglalás)** a 0–10-es táblákból. A szorzás a tankönyv szerinti sorrendben jelenik meg: a 4-es tábla 1 × 4, 2 × 4 … 10 × 4.
 - **Hiányzó tényező** (`? × 7 = 56`) és **maradékos osztás** (`38 : 7 = 5, maradék 3`) a 100-as körben, külön mezővel a maradéknak.
+- **A műveletek tetszőlegesen kombinálhatók:** egyszerre több is kiválasztható, és egy tesztben mindegyikből nagyjából ugyanannyi feladat jön.
 - **☀️ Mai gyakorlás:** egy gombnyomásra 10 feladat a gyerek eddigi eredményeiből:
   - előbb a hibásak;
   - aztán az esedékes ismétlések: a sorozatban elsőre jó válaszok számától függően 1, 2, 4, 7 vagy 14 nap után kerül elő újra egy feladat;
@@ -53,7 +54,7 @@ Szorzótábla- és bennfoglalás-gyakorló web-app alsósoknak, tabletre és tel
   - a tanár szülőket is meghívhat;
   - a családi gyerek eszközeit, PIN-jét és törlését továbbra is a család kezeli.
 - **Kiosztott feladatok:**
-  - például „7-es tábla, osztás, 20 db, péntekig”;
+  - például „7-es tábla, szorzás és osztás, 20 db, péntekig”;
   - az egész csoportnak vagy egy gyereknek (a szülő a saját gyerekének, a tanár egy diákjának);
   - a gyerek appjában „📌 Feladat” kártya jelenik meg, egy gombbal indul;
   - a felnőtt látja, ki teljesítette és hány százalékkal.

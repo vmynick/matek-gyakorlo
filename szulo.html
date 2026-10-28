@@ -530,6 +530,10 @@
             color: white;
         }
 
+        .table-picks.op-picks {
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        }
+
         .assignment {
             border: 1px solid var(--border);
             border-radius: 12px;
@@ -907,14 +911,14 @@
                         <form class="assign-form" onsubmit="createAssignment(event)">
                             <p class="muted">Táblák:</p>
                             <div class="table-picks" id="assign-tables"></div>
+                            <p class="muted">Műveletek (több is választható):</p>
+                            <div class="table-picks op-picks" id="assign-ops">
+                                <button type="button" class="selected" data-op="mul" onclick="toggleAssignOp(this)">× Szorzás</button>
+                                <button type="button" data-op="div" onclick="toggleAssignOp(this)">➗ Osztás</button>
+                                <button type="button" data-op="mis" onclick="toggleAssignOp(this)">🔍 Hiányzó tényező (? × 7 = 56)</button>
+                                <button type="button" data-op="rem" onclick="toggleAssignOp(this)">🍬 Maradékos osztás (38 : 7)</button>
+                            </div>
                             <div class="row">
-                                <select id="assign-op" aria-label="Művelet">
-                                    <option value="mul">× Szorzás</option>
-                                    <option value="div">➗ Osztás</option>
-                                    <option value="mix">🔀 Vegyes</option>
-                                    <option value="mis">🔍 Hiányzó tényező (? × 7 = 56)</option>
-                                    <option value="rem">🍬 Maradékos osztás (38 : 7)</option>
-                                </select>
                                 <select id="assign-mode" aria-label="Mód"
                                         onchange="document.getElementById('assign-count').hidden = this.value === 'exam'">
                                     <option value="practice">🎈 Gyakorló (csontokkal)</option>

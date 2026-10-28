@@ -145,6 +145,16 @@ async function clickInSetting(scope, text, target) {
     }
 }
 
+// Pontosan ezek a műveletek legyenek kijelölve a gyerek appjában (a gombok kapcsolók, az utolsó nem kapcsolható ki)
+async function pickOps(page, ...ops) {
+    for (const on of [true, false]) {
+        for (const btn of await page.locator('#table-picker .btn-op').all()) {
+            const selected = await btn.evaluate((b) => b.classList.contains('selected'));
+            if (ops.includes(await btn.getAttribute('data-op')) === on && selected !== on) await btn.click();
+        }
+    }
+}
+
 async function playExam(page, table, wrongFirst = 0) {
     await page.locator('#mode-exam').click();
     await page.evaluate(() => { selectedTables = []; renderTableSelector(); }); // csak az adott tábla legyen kijelölve
@@ -596,13 +606,17 @@ async function main() {
         await parent.fill('#grant-note', 'Ügyes vagy!');
         await parent.locator('#grant-box .btn').click();
         await parent.locator('#child-stars-total', { hasText: String(before + 2) }).waitFor({ timeout: 10000 });
+        // a feladat két műveletből áll: szorzás és osztás
         await openSetting(parent, 'Új feladat kiosztása');
         await parent.locator('#assign-tables button', { hasText: '4-es' }).click();
+        await parent.locator('#assign-ops button[data-op="div"]').click();
         await parent.fill('#assign-count', '5');
         await parent.locator('.assign-form .btn').click();
         await parent.locator('#child-assignments', { hasText: 'csak neki' }).waitFor({ timeout: 10000 });
-        const own = await sql('test', `select count(*) as n from public.assignments where child_id = '${peti}'`);
-        expect(+own[0].n === 1, `Petinek szóló feladat: ${own[0].n}`);
+        const own = await sql('test', `select count(*) as n, max(op) as op from public.assignments where child_id = '${peti}'`);
+        expect(+own[0].n === 1 && own[0].op === 'mul,div', `Petinek szóló feladat: ${JSON.stringify(own[0])} (1 db, mul,div kell)`);
+        const ownLabel = await parent.locator('#child-assignments').innerText();
+        expect(ownLabel.includes('szorzás és osztás'), `a feladat a szülőnél: ${ownLabel}`);
 
         // A tableten: ajándék-értesítés, a cél és a feladat; a feladat után a cél is teljesül
         await kid.reload();
@@ -611,7 +625,11 @@ async function main() {
         expect(gift.includes('+2') && gift.includes('Ügyes vagy'), `ajándék értesítés: ${gift}`);
         await kid.locator('#star-overlay .btn-start').click();
         expect((await kid.locator('#stars-box').innerText()).includes('Fagyi'), 'a cél nem látszik a tableten');
+        expect((await kid.locator('.assignment-card', { hasText: '4-es' }).innerText()).includes('szorzás és osztás'),
+            `a feladat kártyája: ${await kid.locator('.assignment-card', { hasText: '4-es' }).innerText()}`);
         await kid.locator('.assignment-card', { hasText: '4-es' }).locator('button').click();
+        const ownQuiz = await kid.evaluate(() => ({ ops: currentOps.join(), deck: [...new Set(quizDeck.map((q) => q.op))].sort().join() }));
+        expect(ownQuiz.ops === 'mul,div' && ownQuiz.deck === 'div,mul', `a feladat teszt műveletei: ${JSON.stringify(ownQuiz)}`);
         await answerUntilResults(kid, 0, false);
         const earned = await kid.locator('#res-stars').innerText();
         expect(earned.includes('+2'), `csillag az eredménynél: ${earned} (+2 kell: 5 feladat, de kiosztott)`);
@@ -726,9 +744,9 @@ async function main() {
             .then(() => kid.locator('#star-overlay .btn-start').click()).catch(() => {});
         const petike = await childId('Petike');
         const before = await sql('test', `select count(*) as n from public.answers where child_id = '${petike}'`);
-        await kid.locator('#table-picker .btn-op[data-op="mis"]').click();
+        await pickOps(kid, 'mis');
         await playExam(kid, 7); // ? × 7 = …: 11 feladat
-        await kid.locator('#table-picker .btn-op[data-op="rem"]').click();
+        await pickOps(kid, 'rem');
         await playExam(kid, 3); // … : 3 = …, maradék …: 27 feladat
         await kid.locator('#daily-btn').click();
         expect((await kid.evaluate(() => quizDeck.length)) === 10, 'a mai gyakorlás nem 10 feladat');

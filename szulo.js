@@ -1167,11 +1167,17 @@ function renderAssignTables() {
     box.querySelectorAll('button').forEach(btn => { btn.onclick = () => btn.classList.toggle('selected'); });
 }
 
-// Egy feladat rövid leírása: "7-es, 8-as tábla · osztás · 20 db"
+// A műveletek közül bármelyikek együtt is kiadhatók, de legalább egy kell
+function toggleAssignOp(btn) {
+    if (btn.classList.contains('selected') && document.querySelectorAll('#assign-ops button.selected').length === 1) return;
+    btn.classList.toggle('selected');
+}
+
+// Egy feladat rövid leírása: "7-es, 8-as tábla · szorzás és osztás · 20 db"
 function assignmentLabel(a) {
     const tables = a.tables.map(t => `${t}-${TABLE_SUFFIX[t]}`).join(', ');
     const amount = a.mode === 'exam' ? 'kikérdező, az összes' : (a.question_count ? `gyakorló, ${a.question_count} db` : 'gyakorló, az összes');
-    return `${tables} tábla · ${OP_NAMES[a.op]} · ${amount}`;
+    return `${tables} tábla · ${opsName(a.op)} · ${amount}`;
 }
 
 async function createAssignment(event) {
@@ -1182,7 +1188,7 @@ async function createAssignment(event) {
     const { error } = await sb.rpc('create_assignment', {
         p_group_id: assignTarget.groupId || null,
         p_child_id: assignTarget.childId || null,
-        p_op: document.getElementById('assign-op').value,
+        p_op: joinOps([...document.querySelectorAll('#assign-ops button.selected')].map(b => b.dataset.op)),
         p_tables: tables,
         p_mode: mode,
         p_count: mode === 'exam' ? null : Math.max(1, Math.min(242, +document.getElementById('assign-count').value || 20)),

@@ -7,7 +7,17 @@
 // Hiányzó tényező (mis): ? × table = other·table, a válasz other
 // Maradékos osztás (rem): other : table = hányados, maradék (other az osztandó, table az osztó)
 const OP_SYMBOL = { mul: '×', div: ':', mis: '×', rem: ':' };
-const OP_NAMES = { mul: 'szorzás', div: 'osztás', mix: 'vegyes', mis: 'hiányzó tényező', rem: 'maradékos osztás' };
+const OP_NAMES = { mul: 'szorzás', div: 'osztás', mis: 'hiányzó tényező', rem: 'maradékos osztás' };
+const OP_ORDER = Object.keys(OP_SYMBOL);
+// Egy teszt vagy kiosztott feladat több műveletből is állhat: egy szövegben, mindig ugyanabban a sorrendben
+// ("mul,div,rem"). A régi "mix" (vegyes) a szorzás és az osztás együtt.
+const joinOps = ops => OP_ORDER.filter(op => ops.includes(op)).join(',');
+const parseOps = text => (text === 'mix' ? ['mul', 'div'] : OP_ORDER.filter(op => String(text || '').split(',').includes(op)));
+// "szorzás, osztás és maradékos osztás"
+function opsName(text) {
+    const names = parseOps(text).map(op => OP_NAMES[op]);
+    return names.length > 1 ? `${names.slice(0, -1).join(', ')} és ${names[names.length - 1]}` : names.join('');
+}
 const RECENT = 5; // ennyi legutóbbi választ tartunk meg feladatonként
 const SLOW_MS = 6000; // ennél lassabb átlagos válasz "lassú" a térképen
 const REM_MAX_QUOTIENT = 9; // maradékos osztás a 100-as körben: a hányados 1–9
