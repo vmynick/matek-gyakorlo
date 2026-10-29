@@ -700,7 +700,8 @@
 <body>
 <div class="console">
     <header class="console-head">
-        <a href="./">← Gyakorlás</a>
+        <!-- Szülői módban (a gyakorló app 👨‍👩‍👧 gombjával) ez kapcsolja vissza az eszközt gyakorlásra -->
+        <a href="./" id="practice-link" onclick="leaveParentMode()">🎮 Gyakorló mód</a>
         <h1 id="console-title">👨‍👩‍👧 Szülői / tanári felület</h1>
         <div class="who" id="who" hidden>
             <span id="who-email"></span>

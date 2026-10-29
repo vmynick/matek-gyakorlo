@@ -1242,4 +1242,23 @@ async function loadAssignments() {
     });
 }
 
+/* ---------- Szülői mód és frissítés ---------- */
+
+// Vissza a gyakorláshoz: az eszközön újra a gyakorló app indul (oda maga a link visz)
+function leaveParentMode() {
+    try { localStorage.removeItem('szorzo_device_mode'); } catch (e) { /* nem volt bekapcsolva */ }
+}
+
+// Szülői módban nem fut a gyakorló app, ami a frissítést intézné: induláskor itt lép életbe a letöltött új verzió.
+// Csak a betöltés után kérjük: amíg a régi példány még a lap fájljait adja, a Chrome néha nem vált át.
+function activateWaitingUpdate() {
+    if (!('serviceWorker' in navigator) || !window.isSecureContext) return;
+    navigator.serviceWorker.register('sw.js').then(reg => {
+        if (!reg.waiting || !navigator.serviceWorker.controller) return;
+        navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
+        reg.waiting.postMessage('SKIP_WAITING');
+    }).catch(() => { /* nélküle is működik, csak nem offline */ });
+}
+
+window.addEventListener('load', activateWaitingUpdate);
 init().catch(fail);

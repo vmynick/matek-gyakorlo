@@ -1,5 +1,5 @@
 /* Szorzótábla Mester – a felhő a gyerek appjában: eszköz összekötése, „Ki gyakorol most?”, kiosztott feladatok,
-   csillagok és célok. A szinkron maga a cloud.js-ben van. */
+   csillagok és célok, a felnőtt eszközén a szülői mód. A szinkron maga a cloud.js-ben van. */
 
 /* --- FELHŐ: AZ ESZKÖZ ÖSSZEKÖTÉSE A GYEREKKEL (cloud.js) --- */
 function updateCloudUI() {
@@ -9,7 +9,18 @@ function updateCloudUI() {
     chip.hidden = !child;
     if (child) chip.innerText = `${child.avatar} ${child.nickname}${several ? ' ⇄' : ''}`;
     chip.title = several ? 'Gyerek váltása' : 'Felhő';
+    document.getElementById('parent-mode-btn').hidden = linkedChildren().length > 0; // gyerek eszközén nem kell
     document.getElementById('cloud-footer-btn').innerText = child ? '☁️ Felhő' : '☁️ Eszköz összekötése';
+}
+
+/* --- SZÜLŐI MÓD: a felnőtt saját eszközén az app a szülői / tanári felülettel indul --- */
+// Az átirányítás a szorzotabla.html elején van; kikapcsolni a szülői felület tetején lévő 🎮 gombbal lehet
+function enterParentMode() {
+    playSound('click');
+    if (!confirm('Szülői mód: ezen az eszközön az app ezentúl a szülői / tanári felülettel indul. ' +
+        'A gyakorláshoz a felület tetején lévő „🎮 Gyakorló mód” gombbal válthatsz vissza. Bekapcsolod?')) return;
+    try { localStorage.setItem('szorzo_device_mode', 'parent'); } catch (e) { /* tároló nélkül csak most megy át */ }
+    location.href = 'szulo.html';
 }
 
 // A jelvény: közös tableten gyerekváltás, egyébként a felhő ablak
@@ -137,6 +148,7 @@ async function linkDevice() {
     try {
         const child = await cloudLink(code, document.getElementById('cloud-import').checked);
         sessionStorage.setItem('szorzo_session_child', child.id); // most ő gyakorol
+        localStorage.removeItem('szorzo_device_mode'); // gyerek eszköze lett: a gyakorló app induljon
         closeCloudPanel();
         onCloudSynced();
         showToast(`☁️ Összekötve: ${child.avatar} ${child.nickname}`);

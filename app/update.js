@@ -136,7 +136,7 @@ function showToast(message) {
 }
 
 /* --- VERZIÓ ÉS MEGOSZTÁS --- */
-const APP_VERSION = '1.9';
+const APP_VERSION = '1.10';
 const APP_BUILD = 'dev'; // a közzététel (GitHub Actions) írja át a commit rövid azonosítójára
 const APP_URL = 'https://vmynick.github.io/matek-gyakorlo/';
 

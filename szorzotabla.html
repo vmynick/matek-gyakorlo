@@ -12,6 +12,16 @@
     <link rel="icon" href="icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="icon-192.png">
     <script>
+        // Szülői mód (a 👨‍👩‍👧 gombbal): ezen az eszközön az app a szülői / tanári felülettel indul, onnan a 🎮 gombbal vissza.
+        // A szülőtől kapott eszköz-kódos link (?kod=) ilyenkor is itt, a gyakorló appban nyílik meg.
+        try {
+            if (localStorage.getItem('szorzo_device_mode') === 'parent' && !/[?&]kod=/.test(location.search)) {
+                document.documentElement.hidden = true;
+                location.replace('szulo.html');
+            }
+        } catch (e) { /* tároló nélkül nincs szülői mód */ }
+    </script>
+    <script>
         // Sötét / világos mód még a megjelenés előtt, hogy ne villanjon fel a rossz szín.
         // Alapból a készülék beállítását követi; a 🌙/☀️ gombbal választott mód felülírja.
         (function () {
@@ -57,6 +67,8 @@
         <h1>✨ Szorzótábla Mester</h1>
         <!-- Összekötött eszközön: kié az eszköz (koppintásra a felhő ablak) -->
         <button class="child-chip" id="child-chip" hidden onclick="onChildChipClick()"></button>
+        <!-- Nem összekötött eszközön: a szülő / tanár a saját eszközét szülői módba kapcsolhatja -->
+        <button class="child-chip parent-mode-btn" id="parent-mode-btn" onclick="enterParentMode()">👨‍👩‍👧 Szülői mód</button>
         <!-- Csillagok és célok (összekötött eszközön) -->
         <div class="stars-box" id="stars-box" hidden></div>
         <!-- Kiosztott feladatok (összekötött eszközön, a szülőtől / tanártól) -->

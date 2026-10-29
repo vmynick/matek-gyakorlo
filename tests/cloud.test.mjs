@@ -223,6 +223,7 @@ async function main() {
 
     await test('Gyerek eszköze: helyi eredmény, összekötés kóddal, átvétel és szinkron', async (expect) => {
         await kid.goto(BASE);
+        expect(await kid.locator('#parent-mode-btn').isVisible(), 'összekötés előtt nem látszik a Szülői mód gomb');
         await playExam(kid, 2); // 11 helyes feladat még összekötés előtt
         await kid.locator('#cloud-footer-btn').click();
         expect(await kid.locator('#cloud-import-row').isVisible(), 'az átvétel kérdése nem látszik, pedig van helyi eredmény');
@@ -230,6 +231,7 @@ async function main() {
         await kid.locator('#cloud-link-btn').click();
         await kid.locator('#child-chip').waitFor({ state: 'visible', timeout: 20000 });
         expect((await kid.locator('#child-chip').innerText()).includes('🐼 Bori'), 'a jelvény nem Borié');
+        expect(await kid.locator('#parent-mode-btn').isHidden(), 'a gyerek eszközén is látszik a Szülői mód gomb');
         await playExam(kid, 3, 2); // 2 hibával
         await kid.waitForFunction(() => {
             const box = JSON.parse(localStorage.getItem('szorzo_outbox') || '{"answers":[1]}');

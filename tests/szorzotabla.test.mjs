@@ -695,6 +695,59 @@ async function main() {
     return page;
   });
 
+  await test('Szülői mód: az eszközön a szülői felület indul, a 🎮 gomb visszakapcsolja a gyakorlást', async (expect) => {
+    const page = await newPage({ offline: true, clock: false });
+    const onConsole = () => new URL(page.url()).pathname.endsWith('szulo.html');
+    expect(await page.locator('#parent-mode-btn').isVisible(), 'nem látszik a Szülői mód gomb');
+    await page.locator('#parent-mode-btn').click();
+    await page.waitForURL(/szulo\.html$/);
+    await page.locator('#view-login').waitFor({ state: 'visible' });
+    expect(page.dialogs.some((d) => d.startsWith('Szülői mód')), `nem kérdezett rá: ${page.dialogs.join(' | ')}`);
+
+    // újraindításkor a kezdőcímről is a szülői felület jön (az átirányítás még a betöltés vége előtt indul)
+    await page.goto(base, { waitUntil: 'commit' });
+    await page.waitForURL(/szulo\.html$/);
+    // a szülőtől kapott eszköz-kódos link viszont a gyakorló appban nyílik meg, beírt kóddal
+    await page.goto(`${base}?kod=ABC234`, { waitUntil: 'load' });
+    expect(!onConsole() && (await page.locator('#cloud-overlay').isVisible()) && (await page.inputValue('#cloud-code')) === 'ABC234',
+      `az eszköz-kódos link nem a gyakorló appban nyílt meg (${page.url()})`);
+
+    // vissza gyakorló módba: újraindítás után is a gyakorló app marad
+    await page.goto(`${base}szulo.html`, { waitUntil: 'load' });
+    await page.locator('#practice-link').click();
+    await page.waitForURL((u) => !u.pathname.endsWith('szulo.html'));
+    await page.goto(base, { waitUntil: 'load' });
+    await page.waitForTimeout(500);
+    expect(!onConsole() && (await screen(page)) === 'screen-setup', `nem a gyakorló app indult: ${page.url()}`);
+    return page;
+  });
+
+  // Szülői módban a gyakorló app nem fut, így a szülői felületnek kell életbe léptetnie a letöltött új verziót
+  if (!remoteUrl) await test('Szülői mód: a szülői felület induláskor átvált a letöltött új verzióra', async (expect) => {
+    swVersion = null;
+    const page = await newPage({ clock: false });
+    await page.waitForFunction(() => navigator.serviceWorker.controller, null, { timeout: 10000 });
+    await page.goto(`${base}szulo.html`, { waitUntil: 'load' });
+    swVersion = 'szulo-uj'; // "kiadunk" egy új verziót, a szülői felület nyitva van
+    const waiting = await page.evaluate(async () => {
+      const reg = await navigator.serviceWorker.getRegistration();
+      await reg.update();
+      for (let i = 0; i < 100 && !reg.waiting; i++) await new Promise((r) => setTimeout(r, 100));
+      return !!reg.waiting;
+    });
+    expect(waiting, 'az új verzió nem töltődött le');
+    await page.reload({ waitUntil: 'load' });
+    let keys = [];
+    for (let i = 0; i < 50 && !(keys.includes('szorzotabla-szulo-uj') && !keys.includes('szorzotabla-dev')); i++) {
+      await page.waitForTimeout(200);
+      keys = await page.evaluate(() => caches.keys()).catch(() => []); // közben újratölthet
+    }
+    expect(keys.includes('szorzotabla-szulo-uj') && !keys.includes('szorzotabla-dev'), `gyorsítótárak: ${keys.join(', ')}`);
+    expect(new URL(page.url()).pathname.endsWith('szulo.html'), `nem a szülői felületen maradt: ${page.url()}`);
+    swVersion = null;
+    return page;
+  });
+
   if (!remoteUrl) await test('Frissítés: jelzi, teszt közben vár, utána magától frissít', async (expect) => {
     swVersion = null;
     const page = await newPage({ clock: false });

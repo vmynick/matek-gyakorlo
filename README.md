@@ -33,6 +33,10 @@ Szorzótábla- és bennfoglalás-gyakorló web-app alsósoknak, tabletre és tel
 ## Szülőknek és tanároknak (felhő, nem kötelező)
 
 - A szülő vagy tanár **meghívóval** kap hozzáférést, és **e-mailes belépő linkkel** lép be, jelszó nélkül.
+- **Szülői mód a saját eszközön:**
+  - a gyakorló app tetején, a cím alatti „👨‍👩‍👧 Szülői mód” gombbal az app ezen az eszközön mindig a szülői felülettel indul;
+  - a felület tetején lévő „🎮 Gyakorló mód” gomb kapcsolja vissza;
+  - a gomb csak nem összekötött eszközön látszik, a gyerekek eszközén nem.
 - **Szerepek:**
   - **🏠 Szülő:** családot hoz létre a gyerekeinek; a másik szülőt, nagyszülőt családtagként hívja meg;
   - **🏫 Tanár:** osztályt hoz létre, tanártársat és szülőket hív meg;

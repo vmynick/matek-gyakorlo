@@ -857,6 +857,13 @@ h1 {
     cursor: pointer;
 }
 
+/* Szülői mód gombja ugyanott: halványabb, hogy a gyereknek ne vonja el a figyelmét */
+.child-chip.parent-mode-btn {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
 /* Kiosztott feladat kártya */
 .assignments {
     display: flex;
