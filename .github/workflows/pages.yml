@@ -41,10 +41,10 @@ jobs:
       - name: Build
         run: |
           mkdir _site
-          cp -r szorzotabla.html szulo.html szulo.js stats.js hints.js common.css config.js cloud.js sw.js manifest.webmanifest icon.svg icon-192.png icon-512.png vendor _site/
+          cp -r szorzotabla.html app szulo.html szulo.js stats.js hints.js common.css config.js cloud.js sw.js manifest.webmanifest icon.svg icon-192.png icon-512.png vendor _site/
           # az app alján látszó verzió mellé a commit rövid azonosítója
-          sed -i "s/const APP_BUILD = 'dev';/const APP_BUILD = '${GITHUB_SHA::7}';/" _site/szorzotabla.html
-          grep -q "const APP_BUILD = '${GITHUB_SHA::7}';" _site/szorzotabla.html
+          sed -i "s/const APP_BUILD = 'dev';/const APP_BUILD = '${GITHUB_SHA::7}';/" _site/app/update.js
+          grep -q "const APP_BUILD = '${GITHUB_SHA::7}';" _site/app/update.js
           cp _site/szorzotabla.html _site/index.html
           # új verzió a service workerbe: a telepített appok így frissítik a mentett példányt
           sed -i "s/const VERSION = 'dev';/const VERSION = '${GITHUB_SHA::12}';/" _site/sw.js

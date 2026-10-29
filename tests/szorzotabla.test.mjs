@@ -797,6 +797,24 @@ async function main() {
     });
   }
 
+  // Minden betöltött helyi fájl a service worker listáján (offline első indulás) és a közzétett csomagban is ott van
+  const pagesYml = path.join(root, '.github', 'workflows', 'pages.yml');
+  if (!remoteUrl && fs.existsSync(pagesYml)) await test('Fájllista: amit az oldalak betöltenek, az a service workerben és a közzétételben is ott van', async (expect) => {
+    const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
+    const sw = read('sw.js');
+    const cp = (fs.readFileSync(pagesYml, 'utf8').match(/^\s*cp -r (.+) _site\/\s*$/m)?.[1] || '').split(/\s+/);
+    for (const html of ['szorzotabla.html', 'szulo.html']) {
+      const refs = [...read(html).matchAll(/<(?:script|link)\b[^>]*?\b(?:src|href)="([^"#:?]+)"/g)].map((m) => m[1]);
+      expect(refs.length > 5, `${html}: alig van betöltött fájl (${refs.join(', ')})`);
+      for (const f of refs) {
+        expect(fs.existsSync(path.join(root, f)), `${html}: ${f} nem létezik`);
+        expect(sw.includes(`'${f}'`), `${html}: ${f} nincs a sw.js FILES listáján`);
+        expect(cp.includes(f.split('/')[0]), `${html}: ${f} nincs a pages.yml cp sorában`);
+      }
+    }
+    return null;
+  });
+
   const hasSW = remoteUrl ? true : fs.existsSync(path.join(root, 'sw.js'));
   await test('Telepíthető app + teljesen offline (service worker)', async (expect) => {
     if (!hasSW) { expect(false, 'nincs service worker / manifest, hálózat nélkül nem indul'); return null; }

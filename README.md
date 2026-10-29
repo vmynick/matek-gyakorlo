@@ -74,7 +74,16 @@ Szorzótábla- és bennfoglalás-gyakorló web-app alsósoknak, tabletre és tel
 ## Fejlesztés
 
 Build lépés nincs, a fájlok:
-- [szorzotabla.html](szorzotabla.html): a gyakorló app;
+- [szorzotabla.html](szorzotabla.html): a gyakorló app oldala; a stílusa és a kódja témánként az [app/](app/) mappában:
+  - `app.css`: a stílus;
+  - `app.js`: állapot, hangok, indulás, sötét mód;
+  - `setup.js`: a kezdőképernyő beállításai;
+  - `deck.js`: a feladatok összeállítása, a feladatonkénti eredmények és a mai gyakorlás;
+  - `quiz.js`: a teszt menete és az eredmény;
+  - `progress.js`: a Fejlődés fül;
+  - `pin.js`: szülői és gyerek-PIN;
+  - `update.js`: offline működés, frissítés, verzió;
+  - `cloud-ui.js`: összekötés, kiosztott feladatok, csillagok;
 - [szulo.html](szulo.html) és [szulo.js](szulo.js): a szülői / tanári felület;
 - [stats.js](stats.js) és [common.css](common.css): közös statisztika és színek;
 - [hints.js](hints.js): a tippek és a levezetések rossz válasz után;
